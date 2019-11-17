@@ -181,6 +181,17 @@ class MqttCommon:
 
         return None
 
+    def start(self):
+        self._logger.debug('')
+
+        self.connect()
+        self.loop_start()
+
+    def end(self):
+        self._logger.debug('')
+
+        self.disconnect()
+        self.loop_stop()
 
 class App:
     def __init__(self, host, topic, port=MqttCommon.DEF_PORT, debug=False):
@@ -194,16 +205,14 @@ class App:
 
         self._mqtt = MqttCommon(self._svr_host, self._topic, self._svr_port,
                                 debug=self._debug)
-        _mqtt.connect()
-        _mqtt.loop_start()
+        self._mqtt.start()
         
     def main(self):
         self._logger.debug('')
 
     def end(self):
         self._logger.debug('')
-        _mqtt.disconnect()
-        _mqtt.loop_stop()
+        self._mqtt.end()
 
 
 import click
@@ -215,15 +224,18 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 MQTT Common class
 ''')
 @click.argument('server_host')
-@click.argument('topic', nargs=-1)
+@click.argument('topic1')
+@click.argument('topic2', nargs=-1)
 @click.option('--server_port', '--port', '-p', 'server_port', type=int,
               default=MqttCommon.DEF_PORT,
               help='server port')
 @click.option('--debug', '-d', 'debug', is_flag=True, default=False,
               help='debug flag')
-def main(server_host, server_port, topic, debug):
+def main(server_host, server_port, topic1, topic2, debug):
     logger = get_logger(__name__, debug=debug)
 
+    topic = [topic1] + list(topic2)
+    
     app = App(server_host, topic, server_port, debug=debug)
     try:
         app.main()
