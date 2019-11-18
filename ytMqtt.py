@@ -157,7 +157,7 @@ class Mqtt:
         payload = json.loads(msg.payload.decode('utf-8'))
         self._logger.debug('topic=%s, payload=%s', topic, payload)
 
-        msg_data = {'topic': topic, 'data': payload}
+        msg_data = {'topic': topic, 'payload': payload}
         self.msg_put(self.MSG_DATA, msg_data)
 
     def on_publish(self, client, userdata, mid):
@@ -264,8 +264,8 @@ class App:
             msg_type, msg_data = self._mqtt.msg_get()
             if msg_type == Mqtt.MSG_DATA:
                 topic = msg_data['topic']
-                data = msg_data['data']
-                print('(%d) %s: %s' % (i, topic, data))
+                payload = msg_data['payload']
+                print('(%d) %s: %s' % (i, topic, payload))
             else:
                 print('(%d) %s' % (i, msg_data))
             time.sleep(2)

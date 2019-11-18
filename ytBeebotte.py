@@ -34,6 +34,13 @@ class Beebotte(Mqtt):
 
         super().publish(topic, payload, qos=qos, retain=retain)
 
+    def ts2datestr(self, ts_msec):
+        self._logger.debug('ts_msec=%d', ts_msec)
+
+        datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
+                                time.localtime(ts_msec / 1000))
+        return datestr
+
 
 class App:
     def __init__(self, topic, debug=False):
@@ -50,14 +57,19 @@ class App:
         self._logger.debug('')
 
         self._bbt.subscribe()
-        self._bbt.publish('env1/temp', 'hello')
+        for t in self._topic:
+            self._bbt.publish(t, 'hello')
 
-        for i in range(5):
+        for i in range(10):
             msg_type, msg_data = self._bbt.msg_get()
             if msg_type == Beebotte.MSG_DATA:
                 topic = msg_data['topic']
-                data = msg_data['data']
-                print('(%d) %s: %s' % (i, topic, data))
+                payload = msg_data['payload']
+
+                data = payload['data']
+                datestr = self._bbt.ts2datestr(payload['ts'])
+
+                print('(%d) %s %s: %s' % (i, datestr, topic, data))
             else:
                 print('(%d) %s' % (i, msg_data))
             time.sleep(2)
