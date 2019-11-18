@@ -61,7 +61,7 @@ class App:
             self._bbt.publish(t, 'hello')
 
         for i in range(10):
-            msg_type, msg_data = self._bbt.msg_get()
+            msg_type, msg_data = self._bbt.get_msg()
             if msg_type == Beebotte.MSG_DATA:
                 topic = msg_data['topic']
                 payload = msg_data['payload']
