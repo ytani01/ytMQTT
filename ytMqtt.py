@@ -72,6 +72,8 @@ class Mqtt:
 
         self._mqttc.username_pw_set(self._user, self._pw)
 
+        self._loop_active = False
+
     def put_msg(self, msg_type, msg_data):
         self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
 
@@ -89,6 +91,19 @@ class Mqtt:
         self._logger.debug('msg=%s', msg)
         return msg['type'], msg['data']
 
+    def wait_msg(self, wait_msg_type):
+        self._logger.debug('wait_msg_type=%s', wait_msg_type)
+
+        (msg_type, msg_data) = (self.MSG_NONE, None)
+
+        while self._loop_active:
+            msg_type, msg_data = self.get_msg(block=True, timeout=1)
+            if msg_type == wait_msg_type:
+                break
+
+        self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
+        return msg_type, msg_data
+
     def connect(self, keepalive=60):
         self._logger.debug('')
         self._mqttc.connect(self._svr_host, self._svr_port,
@@ -101,9 +116,11 @@ class Mqtt:
     def loop_start(self):
         self._logger.debug('')
         self._mqttc.loop_start()
+        self._loop_active = True
 
     def loop_stop(self):
         self._logger.debug('')
+        self._loop_active = False
         self._mqttc.loop_stop()
 
     def subscribe(self, topic=None, qos=DEF_QOS):
