@@ -52,12 +52,12 @@ class Mqtt:
 
         if self.load_conf() is None:
             self._logger.error('load_conf(): failed')
-            return
+            return None
 
         ret = self.get_user_pw()
         if ret is None:
             self._logger.error('get_user_pw(): failed (ret=%s)', ret)
-            return
+            return None
 
         self._user, self._pw = ret
         self._logger.debug('_user=\'%s\', _pw=\'%s\'', self._user, self._pw)
