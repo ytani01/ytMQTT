@@ -30,7 +30,7 @@ class Mqtt:
     MSG_NONE   = 'NONE'    # {'type':MSG_NONE, 'data':None}
     MSG_ERR    = 'ERR'     # {'type':MSG_ERR,  'data':'mesage'}
 
-    def __init__(self, host, topic, port=DEF_PORT, debug=False):
+    def __init__(self, topic, host, port=DEF_PORT, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
         self._logger.debug('host=%s:port=%d, topic=%s', host, port, topic)
@@ -278,14 +278,15 @@ class Mqtt:
 
 
 class App:
-    def __init__(self, host, topic, port=Mqtt.DEF_PORT, debug=False):
+    def __init__(self, topic, mqtt_host, mqtt_port=Mqtt.DEF_PORT, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('host=%s:port=%d, topic=%s', host, port, topic)
+        self._logger.debug('topic=%s, mqtt_host=%s, mqtt_port=%d',
+                           topic, mqtt_host, mqtt_port)
 
         self._topic = topic
 
-        self._mqtt = Mqtt(host, self._topic, port, debug=self._debug)
+        self._mqtt = Mqtt(self._topic, mqtt_host, mqtt_port, debug=self._debug)
         self._mqtt.start()
 
     def main(self):
@@ -312,10 +313,11 @@ class App:
 
 
 class AppServer:
-    def __init__(self, host, topic, port=Mqtt.DEF_PORT, debug=False):
+    def __init__(self, topic, mqtt_host, mqtt_port=Mqtt.DEF_PORT, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('host=%s:port=%d, topic=%s', host, port, topic)
+        self._logger.debug('topic=%s, mqtt_host=%s, mqtt_port=%d',
+                           topic, mqtt_host, mqtt_port)
 
         self._topic = topic
 
@@ -325,17 +327,15 @@ class AppServer:
         self._t_request = topic[0]
         self._t_reply = topic[1]
 
-        self._mqtt = Mqtt(host, self._topic, port, debug=self._debug)
+        self._mqtt = Mqtt(self._topic, mqtt_host, mqtt_port, debug=self._debug)
         self._mqtt.start()
 
         self._mqtt.subscribe(self._t_request)
 
         self._loop = True
 
-
     def main(self):
         self._logger.debug('')
-
 
         while self._loop:
             payload = self.recv_request()
@@ -355,9 +355,9 @@ class AppServer:
         self._logger.debug('')
 
         while True:
-            t, d = self._mqtt.wait_msg(Mqtt.MSG_DATA)
+            t, d = self._mqtt.wait_msg(self._mqtt.MSG_DATA)
             self._logger.debug('t=%s, d=%s', t, d)
-            if t == Mqtt.MSG_DATA:
+            if t == self._mqtt.MSG_DATA:
                 break
 
         return d['payload']
@@ -367,6 +367,63 @@ class AppServer:
 
         self._mqtt.publish(self._t_reply, msg)
 
+
+class AppClient:
+    def __init__(self, topic, mqtt_host, mqtt_port, debug=False):
+        self._debug = debug
+        self._logger = get_logger(__class__.__name__, self._debug)
+        self._logger.debug('topic=%s, mqtt_host=%s, mqtt_port=%s',
+                           topic, mqtt_host, mqtt_port)
+
+        self._topic = topic
+
+        if len(self._topic) < 2:
+            raise RuntimeError('len(_topic) <2: %s' % self._topic)
+
+        self._t_request = topic[0]
+        self._t_reply = topic[1]
+
+        self._mqtt = Mqtt(self._topic, mqtt_host, mqtt_port, debug=self._debug)
+        self._mqtt.start()
+
+        self._mqtt.subscribe(self._t_reply)
+
+        self._loop = True
+
+    def main(self):
+        self._logger.debug('')
+
+        while self._loop:
+            data = input()
+            self._logger.debug('data=%s', data)
+
+            self.send_request(data)
+
+            payload = self.recv_reply()
+            self._logger.debug('payload=%s', payload)
+            print(payload)
+
+    def end(self):
+        self._logger.debug('')
+
+        self._logger.debug('done')
+
+    def send_request(self, data):
+        self._logger.debug('data=%s', data)
+        self._mqtt.publish(self._t_request, data)
+
+    def recv_reply(self):
+        self._logger.debug('')
+
+        t, d = self._mqtt.wait_msg(self._mqtt.MSG_DATA)
+        self._logger.debug('t=%s, d=%s', t, d)
+
+        if t != self._mqtt.MSG_DATA:
+            return None
+
+        return d['payload']
+
+
 import click
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
@@ -375,27 +432,27 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
                help='''
 MQTT Common class
 ''')
-@click.argument('server_host')
+@click.argument('mqtt_host')
 @click.argument('topic1')
 @click.argument('topic2', nargs=-1)
-@click.option('--server_port', '--port', '-p', 'server_port', type=int,
+@click.option('--mqtt_port', '--port', '-p', 'mqtt_port', type=int,
               default=Mqtt.DEF_PORT,
               help='server port')
 @click.option('--mode', '-m', 'mode', type=str, default='',
               help='mode: \'\' or \'s\' or \'c\'')
 @click.option('--debug', '-d', 'debug', is_flag=True, default=False,
               help='debug flag')
-def main(server_host, server_port, topic1, topic2, mode, debug):
+def main(mqtt_host, mqtt_port, topic1, topic2, mode, debug):
     logger = get_logger(__name__, debug=debug)
 
     topic = [topic1] + list(topic2)
 
     if mode == '':
-        app = App(server_host, topic, server_port, debug=debug)
+        app = App(topic, mqtt_host, mqtt_port, debug=debug)
     if mode == 's':
-        app = AppServer(server_host, topic, server_port, debug=debug)
+        app = AppServer(topic, mqtt_host, mqtt_port, debug=debug)
     if mode == 'c':
-        app = AppClient(server_host, topic, server_port, debug=debug)
+        app = AppClient(topic, mqtt_host, mqtt_port, debug=debug)
     try:
         app.main()
     finally:

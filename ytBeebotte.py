@@ -22,16 +22,13 @@ class Beebotte(Mqtt):
         self._logger = get_logger(__class__.__name__, self._debug)
         self._logger.debug('topic=%s', topic)
 
-        super().__init__(self.HOST, topic, port=self.PORT, debug=self._debug)
+        super().__init__(topic, self.HOST, port=self.PORT, debug=self._debug)
 
     def publish(self, topic, data, qos=DEF_QOS, retain=False):
         self._logger.debug('topic=%s, data=%s, qos=%d, retain=%s',
                            topic, data, qos, retain)
 
-        ts = int(time.time() * 1000)
-        payload = {'data': data, 'ts': ts, 'ispublic': True}
-        self._logger.debug('ts=%d, payload=%s', ts, payload)
-
+        payload = self.data2payload(data)
         super().publish(topic, payload, qos=qos, retain=retain)
 
     def ts2datestr(self, ts_msec):
@@ -40,6 +37,14 @@ class Beebotte(Mqtt):
         datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
                                 time.localtime(ts_msec / 1000))
         return datestr
+
+    def data2payload(self, data):
+        self._logger.debug('data=%s', data)
+
+        ts = int(time.time() * 1000)
+        payload = {'data': data, 'ts': ts, 'ispublic': False}
+        self._logger.debug('payload=%s', payload)
+        return payload
 
 
 class App:
@@ -85,20 +90,8 @@ class AppServer:
         self._logger = get_logger(__class__.__name__, self._debug)
         self._logger.debug('topic=%s')
 
-        self._topic = topic
-
-        if len(self._topic) < 2:
-            raise RuntimeError('len(_topic) <2: %s' % self._topic)
-
-        self._t_request = topic[0]
-        self._t_reply = topic[1]
-
-        self._bbt = Beebotte(self._topic, debug=self._debug)
-        self._bbt.start()
-
-        self._bbt.subscribe(self._t_request)
-
-        self._loop = True
+        super().__init__(topic, Beebotte.HOST, Beebotte.PORT,
+                         debug=self._debug)
 
     def main(self):
         self._logger.debug('')
@@ -107,33 +100,18 @@ class AppServer:
             payload = self.recv_request()
             self._logger.debug('payload=%s', payload)
 
-            msg = payload['data']
-            print('msg=%s' % msg)
+            data = payload['data']
+            print('data=%s' % data)
 
             time.sleep(2)
 
-            self.send_reply(msg)
-
-    def end(self):
-        self._logger.debug('')
-
-        self._logger.debug('done')
+            self.send_reply(data)
 
     def recv_request(self):
         self._logger.debug('')
 
-        t, d = self._bbt.wait_msg(Beebotte.MSG_DATA)
-        self._logger.debug('t=%s, d=%s', t, d)
-
-        if t != Beebotte.MSG_DATA:
-            return None
-
-        return d['payload']
-
-    def send_reply(self, msg):
-        self._logger.debug('msg=%s', msg)
-
-        self._bbt.publish(self._t_reply, msg)
+        payload = super().recv_request()
+        return payload
 
 
 class AppClient:
@@ -142,29 +120,17 @@ class AppClient:
         self._logger = get_logger(__class__.__name__, self._debug)
         self._logger.debug('topic=%s')
 
-        self._topic = topic
-
-        if len(self._topic) < 2:
-            raise RuntimeError('len(_topic) <2: %s' % self._topic)
-
-        self._t_request = topic[0]
-        self._t_reply = topic[1]
-
-        self._bbt = Beebotte(self._topic, debug=self._debug)
-        self._bbt.start()
-        
-        self._bbt.subscribe(self._t_reply)
-
-        self._loop = True
+        super().__init__(topic, Beebotte.HOST, Beebotte.PORT,
+                         debug=self._debug)
 
     def main(self):
         self._logger.debug('')
 
         while self._loop:
-            msg = input()
-            self._logger.debug('msg=%s', msg)
+            data = input()
+            self._logger.debug('data=%s', data)
 
-            self.send_request(msg)
+            self.send_request(data)
 
             payload = self.recv_reply()
             self._logger.debug('payload=%s', payload)
@@ -175,20 +141,9 @@ class AppClient:
 
         self._logger.debug('done')
 
-    def send_request(self, msg):
-        self._logger.debug('msg=%s', msg)
-        self._bbt.publish(self._t_request, msg)
-
-    def recv_reply(self):
-        self._logger.debug('')
-
-        t, d = self._bbt.wait_msg(Beebotte.MSG_DATA)
-        self._logger.debug('t=%s, d=%s', t, d)
-
-        if t != Beebotte.MSG_DATA:
-            return None
-
-        return d['payload']
+    def send_request(self, data):
+        self._logger.debug('data=%s', data)
+        self._bbt.publish(self._t_request, data)
 
 
 import click
