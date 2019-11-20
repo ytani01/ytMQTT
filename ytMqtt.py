@@ -93,15 +93,16 @@ class Mqtt:
 
     def wait_msg(self, wait_msg_type):
         self._logger.debug('wait_msg_type=%s', wait_msg_type)
+        self._logger.debug('_loop_active=%s', self._loop_active)
 
         (msg_type, msg_data) = (self.MSG_NONE, None)
 
         while self._loop_active:
-            msg_type, msg_data = self.get_msg(block=True, timeout=1)
+            msg_type, msg_data = self.get_msg(block=True, timeout=2)
+            self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
             if msg_type == wait_msg_type:
                 break
 
-        self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
         return msg_type, msg_data
 
     def connect(self, keepalive=60):
