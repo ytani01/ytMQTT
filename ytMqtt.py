@@ -276,6 +276,8 @@ class Mqtt:
 
         self.loop_stop()
 
+        self._logger.debug('done')
+
 
 class App:
     def __init__(self, topic, mqtt_host, mqtt_port=Mqtt.DEF_PORT, debug=False):
@@ -310,6 +312,7 @@ class App:
     def end(self):
         self._logger.debug('')
         self._mqtt.end()
+        self._logger.debug('end')
 
 
 class AppServer:
