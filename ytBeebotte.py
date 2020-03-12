@@ -17,12 +17,12 @@ class Beebotte(Mqtt):
 
     DEF_QOS = 0
 
-    def __init__(self, topic, debug=False):
+    def __init__(self, topic, user debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s', topic)
+        self._logger.debug('topic=%s, user=%s', topic, user)
 
-        super().__init__(topic, self.HOST, port=self.PORT, debug=self._debug)
+        super().__init__(topic, user, self.HOST, port=self.PORT, debug=self._debug)
 
     def publish(self, topic, data, qos=DEF_QOS, retain=False):
         self._logger.debug('topic=%s, data=%s, qos=%d, retain=%s',
@@ -48,14 +48,15 @@ class Beebotte(Mqtt):
 
 
 class App:
-    def __init__(self, topic, debug=False):
+    def __init__(self, topic, user, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s', topic)
+        self._logger.debug('topic=%s, user=%s', topic, user)
 
         self._topic = topic
+        self._user = user
 
-        self._bbt = Beebotte(self._topic, debug=self._debug)
+        self._bbt = Beebotte(self._topic, self.user, debug=self._debug)
         self._bbt.start()
 
     def main(self):
@@ -85,13 +86,14 @@ class App:
 
 
 class AppServer:
-    def __init__(self, topic, debug=False):
+    def __init__(self, topic, user, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s')
+        self._logger.debug('topic=%s, user=%s', topic, user)
 
-        super().__init__(topic, Beebotte.HOST, Beebotte.PORT,
-                         debug=self._debug)
+        self._topic = topic
+        self._user = user
+
 
     def main(self):
         self._logger.debug('')
