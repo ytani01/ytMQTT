@@ -40,9 +40,11 @@ class Foo:
     def main(self):
         self._log.debug('')
 
+        self._log.debug('connect')
         self._mqttc.connect(self._mqtt_host, self._mqtt_port, keepalive=10)
         time.sleep(2)
         
+        self._log.debug('loop_start')
         self._mqttc.loop_start()
         time.sleep(2)
         
@@ -53,18 +55,18 @@ class Foo:
 
             for t in self._topics:
                 payload = json.dumps(indata).encode('utf-8')
-                self._log.debug('payload=%a', payload)
+                self._log.debug('publish: payload=%a', payload)
                 self._mqttc.publish(t, payload, qos=self.DEF_QOS, retain=False)
                 time.sleep(2)
 
     def end(self):
         self._log.debug('')
 
-        self._log.debug('loop_stop()')
+        self._log.debug('loop_stop')
         self._mqttc.loop_stop()
         time.sleep(2)
 
-        self._log.debug('disconnect()')
+        self._log.debug('disconnect')
         self._mqttc.disconnect()
         time.sleep(2)
 
@@ -88,13 +90,14 @@ class Foo:
         self._log.debug('done')
 
     def on_message(self, client, userdata, msg):
-        self._log.debug('userdata=%s, msg=%s', userdata, msg)
+        self._log.debug('userdata=%s', userdata)
 
+        topic = msg.topic
         payload = json.loads(msg.payload.decode('utf-8'))
-        self._log.debug('payload=%a', payload)
+        self._log.debug('done:topic=%s, payload=%a', topic, payload)
 
     def on_publish(self, client, userdata, mid):
-        self._log.debug('userdata=%s, mid=%s', userdata, mid)
+        self._log.debug('done:userdata=%s, mid=%s', userdata, mid)
 
 
 @click.command(context_settings=CONTEXT_SETTINGS,
