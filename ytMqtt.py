@@ -11,6 +11,7 @@ import os
 import csv
 import json
 import time
+import random
 import threading
 
 from MyLogger import get_logger
@@ -76,6 +77,44 @@ class Mqtt:
 
         self._loop_active = False
 
+    def end(self):
+        self._logger.debug('')
+
+        self.disconnect()
+        self.put_msg(self.MSG_DISCON, 0)
+
+        msg_type, msg_data = self.wait_msg(self.MSG_DISCON)
+        self._logger.debug('%s: %s', msg_type, msg_data)
+        self.loop_stop()
+
+        self._logger.debug('done')
+
+    def send_data(self, topic, data):
+        self._logger.debug('topic=%s, data=%a', topic, data)
+
+        self.publish(topic, data)
+
+    def recv_data(self, topic):
+        self._logger.debug('topic=%s', topic)
+
+        while self._loop_active:
+            try:
+                msg_type, msg_data = self.wait_msg(self.MSG_DATA)
+                self._logger.debug('msg_type=%s, msg_data=%s',
+                                   msg_type, msg_data)
+
+                if msg_data['topic'] == topic:
+                    return msg_data['payload']
+
+            except Exception as e:
+                return None
+
+            self.put_msg(msg_type, msg_data)
+            time.sleep(random.random())
+
+        self._logger.info('done')
+        return None
+
     def put_msg(self, msg_type, msg_data):
         self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
 
@@ -101,11 +140,20 @@ class Mqtt:
 
         while self._loop_active:
             msg_type, msg_data = self.get_msg(block=True, timeout=2)
-            self._logger.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
-            if msg_type == wait_msg_type:
-                break
+            self._logger.debug('wait_msgtype=%s, msg_type=%s, msg_data=%s',
+                              wait_msg_type, msg_type, msg_data)
 
-        return msg_type, msg_data
+            if msg_type == wait_msg_type:
+                return msg_type, msg_data
+
+            if msg_type == self.MSG_NONE:
+                continue
+
+            self.put_msg(msg_type, msg_data)
+            time.sleep(random.random())
+
+        self._logger.info('done')
+        return None
 
     def connect(self, keepalive=60):
         self._logger.debug('')
@@ -125,6 +173,25 @@ class Mqtt:
         self._logger.debug('')
         self._loop_active = False
         self._mqttc.loop_stop()
+
+    def publish(self, topic, payload, qos=DEF_QOS, retain=False):
+        self._logger.debug('topic=%s, payload=%s, qos=%d, retain=%s',
+                           topic, payload, qos, retain)
+
+        if topic is None or topic == '':
+            topic = self._topic[0]
+            self._logger.debug('topic=%s', topic)
+
+        if type(topic) == int:
+            topic = self._topic[topic]
+            self._logger.debug('topic=%s', topic)
+
+        msg_payload = json.dumps(payload).encode('utf-8')
+        self._logger.debug('msg_payload=%s', msg_payload)
+
+        self._mqttc.publish(topic, msg_payload, qos=qos, retain=retain)
+
+        self.wait_msg(self.MSG_OK)
 
     def subscribe(self, topic=None, qos=DEF_QOS):
         self._logger.debug('topic=%s, qos=%d', topic, qos)
@@ -151,22 +218,6 @@ class Mqtt:
         for t in self._topic:
             self._mqttc.unsubscribe(t)
 
-    def publish(self, topic, payload, qos=DEF_QOS, retain=False):
-        self._logger.debug('topic=%s, payload=%s, qos=%d, retain=%s',
-                           topic, payload, qos, retain)
-
-        if topic is None or topic == '':
-            topic = self._topic[0]
-            self._logger.debug('topic=%s', topic)
-
-        if type(topic) == int:
-            topic = self._topic[topic]
-            self._logger.debug('topic=%s', topic)
-
-        msg_payload = json.dumps(payload).encode('utf-8')
-        self._logger.debug('msg_payload=%s', msg_payload)
-        self._mqttc.publish(topic, msg_payload, qos=qos, retain=retain)
-
     def on_log(self, client, userdata, level, buf):
         self._logger.debug('userdata=%s, level=%d, buf=%s',
                            userdata, level, buf)
@@ -178,6 +229,7 @@ class Mqtt:
             self.put_msg(self.MSG_ERR, 'connect error')
             return
 
+        self._logger.debug('put_msg(MSG_CON)')
         self.put_msg(self.MSG_CON, rc)
 
     def on_disconnect(self, client, userdata, rc):
@@ -205,17 +257,6 @@ class Mqtt:
         self._logger.debug('userdata=%s, mid=%s', userdata, mid)
         self.put_msg(self.MSG_OK, 'published(mid=%s)' % mid)
 
-    def find_conf(self):
-        self._logger.debug('')
-
-        for dir in self.CONF_PATH:
-            for fname in self.CONF_FILENAME:
-                pathname = dir + '/' + fname
-                self._logger.debug('pathname=%s', pathname)
-                if os.path.isfile(pathname) or os.path.islink(pathname):
-                    return pathname
-        return None
-
     def load_conf(self):
         self._logger.debug('')
 
@@ -241,6 +282,17 @@ class Mqtt:
         # self._logger.debug('_conf=%s', self._conf)
         return self._conf
 
+    def find_conf(self):
+        self._logger.debug('')
+
+        for dir in self.CONF_PATH:
+            for fname in self.CONF_FILENAME:
+                pathname = dir + '/' + fname
+                self._logger.debug('pathname=%s', pathname)
+                if os.path.isfile(pathname) or os.path.islink(pathname):
+                    return pathname
+        return None
+
     def get_pw(self, user):
         """
         topicが複数の場合は、先頭のトピックがマッチする
@@ -250,7 +302,7 @@ class Mqtt:
                            self._svr_host, self._svr_port, self._topic[0])
 
         for cf in self._conf:
-            self._logger.debug('cf=%s', cf)
+            # self._logger.debug('cf=%s', cf)
             if cf['host'] == self._svr_host and \
                cf['port'] == self._svr_port and \
                cf['topic'] == self._topic[0] and \
@@ -270,16 +322,6 @@ class Mqtt:
         msg_type, msg_data = self.wait_msg(self.MSG_CON)
         self._logger.debug('%s: %s', msg_type, msg_data)
 
-    def end(self):
-        self._logger.debug('')
-
-        self.disconnect()
-        self.put_msg(self.MSG_DISCON, 0)
-
-        msg_type, msg_data = self.wait_msg(self.MSG_DISCON)
-        self._logger.debug('%s: %s', msg_type, msg_data)
-        self.loop_stop()
-
         self._logger.debug('done')
 
 
@@ -290,33 +332,62 @@ class MqttApp:
         self._logger.info('mqtt=%s', type(mqtt))
 
         self._mqtt = mqtt
-        self._mqtt.start()
+        self._topic = self._mqtt._topic[0]
+        self._active = False
+
+        self._th = threading.Thread(target=self.receiver)
 
     def main(self):
-        self._logger.debug('')
+        self._logger.info('')
 
+        self._mqtt.start()
         self._mqtt.subscribe()
 
-        for i in range(5):
-            for t in self._mqtt._topic:
-                data = 'hello:' + str(i)
-                self._mqtt.publish(t, data)
-                print('publish(%d): %s: %s' % (i, t, data))
+        self._active = True
+        self._th.start()
 
-            for t in self._mqtt._topic:
-                msg_type, msg_data = self._mqtt.wait_msg(Mqtt.MSG_DATA)
-                if msg_type == Mqtt.MSG_DATA:
-                    topic = msg_data['topic']
-                    payload = msg_data['payload']
-                    print('subscribe(%d) %s: %s' % (i, topic, payload))
-                else:
-                    print('(%d) %s: %s' % (i, msg_type, msg_data))
-            time.sleep(2)
+        while self._active:
+            data = input('--==< OK >==--\n')
+
+            if data == '':
+                self._active = False
+                break
+            try:
+                data = float(data)
+                if int(data) == data:
+                    data = int(data)
+            except ValueError:
+                pass
+            self._logger.debug('data=%a', data)
+
+            self._mqtt.send_data(self._topic, data)
+
+        self._logger.info('done')
 
     def end(self):
-        self._logger.debug('')
+        self._logger.info('')
+        self._active = False
+
+        self._logger.info('_mqtt.end() ..')
         self._mqtt.end()
-        self._logger.debug('end')
+
+        self._logger.info('_th.join() ..')
+        self._th.join()
+
+        self._logger.info('done')
+
+    def receiver(self):
+        self._logger.debug('')
+
+        while self._active:
+            data = self._mqtt.recv_data(self._topic)
+            self._logger.debug('data=%s', data)
+            if data is None:
+                continue
+
+            print('> %a' % (data))
+
+        self._logger.info('done')
 
 
 class MqttServerApp:
@@ -331,20 +402,20 @@ class MqttServerApp:
         if len(self._topic) < 2:
             raise RuntimeError('len(_topic) < 2: %s' % self._topic)
 
-        self._t_request = self._topic[0]
-        self._t_reply = self._topic[1]
-
-        self._active = True
+        self._topic_request = self._topic[0]
+        self._topic_reply = self._topic[1]
 
     def main(self):
         self._logger.debug('')
 
         self._mqtt.start()
-        self._mqtt.subscribe(self._t_request)
+        self._mqtt.subscribe(self._topic_request)
+
+        self._active = True
 
         while self._active:
-            data = self.recv_request()
-            self._logger.info('recv: data="%s"', data)
+            data = self._mqtt.recv_data(self._topic_request)
+            self._logger.info('recv[%s]: data="%s"', self._topic_request, data)
 
             th = threading.Thread(target=self.handle, args=([data]))
             th.start()
@@ -352,31 +423,15 @@ class MqttServerApp:
         self._logger.debug('done')
 
     def end(self):
-        self._logger.debug('')
+        self._logger.info('')
         self._active = False
-        self._logger.debug('done')
+        self._logger.info('done')
 
     def handle(self, data):
-        self._logger.debug('data="%s"', data)
         time.sleep(1)
-        self.send_reply(data)
-        self._logger.info('send: data="%s"', data)
 
-    def recv_request(self):
-        self._logger.debug('')
-
-        while True:
-            t, d = self._mqtt.wait_msg(self._mqtt.MSG_DATA)
-            self._logger.debug('t=%s, d=%s', t, d)
-            if t == self._mqtt.MSG_DATA:
-                break
-
-        return d['payload']
-
-    def send_reply(self, msg):
-        self._logger.debug('msg=%s', msg)
-
-        self._mqtt.publish(self._t_reply, msg)
+        self._mqtt.send_data(self._topic_reply, data)
+        self._logger.info('send[%s]: data="%s"', self._topic_reply, data)
 
 
 class MqttClientApp:
@@ -391,11 +446,11 @@ class MqttClientApp:
         if len(self._topic) < 2:
             raise RuntimeError('len(_topic) <2: %s' % self._topic)
 
-        self._t_request = self._topic[0]
-        self._t_reply = self._topic[1]
+        self._topic_request = self._topic[0]
+        self._topic_reply = self._topic[1]
 
         self._mqtt.start()
-        self._mqtt.subscribe(self._t_reply)
+        self._mqtt.subscribe(self._topic_reply)
 
         self.th = threading.Thread(target=self.receiver)
 
@@ -406,13 +461,13 @@ class MqttClientApp:
         self.th.start()
 
         while self._active:
-            data = input('> please input string\n')
+            data = input('--==< OK >==--\n')
             self._logger.debug('data="%s"', data)
             if data == '':
                 self._active = False
                 break
 
-            self.send_request(data)
+            self._mqtt.send_data(self._topic_request, data)
 
         self._logger.debug('done')
 
@@ -420,7 +475,7 @@ class MqttClientApp:
         self._logger.debug('')
 
         while self._active:
-            data = self.recv_reply()
+            data = self._mqtt.recv_data(self._topic_reply)
             print('"%s"' % (data))
 
         self._logger.debug('done')
@@ -433,21 +488,6 @@ class MqttClientApp:
 
         self.th.join()
         self._logger.debug('done')
-
-    def send_request(self, data):
-        self._logger.debug('data=%s', data)
-        self._mqtt.publish(self._t_request, data)
-
-    def recv_reply(self):
-        self._logger.debug('')
-
-        t, d = self._mqtt.wait_msg(self._mqtt.MSG_DATA)
-        self._logger.debug('t=%s, d=%s', t, d)
-
-        if t != self._mqtt.MSG_DATA:
-            return None
-
-        return d['payload']
 
 
 import click
@@ -480,19 +520,23 @@ def main(user, mqtt_host, mqtt_port, topic1, topic2, mode, debug):
     if mode == '':
         app = MqttApp(mqtt, debug=debug)
 
-    if mode in 'sc':
+    if mode != '':
         if len(topic) != 2:
-            print('topic mast be [{request topic}, {reply topic}]')
+            print('topics must be .. {request topic} {reply topic}')
             return
 
-    if mode == 's':
-        app = MqttServerApp(mqtt, debug=debug)
     if mode == 'c':
         app = MqttClientApp(mqtt, debug=debug)
 
+    if mode == 's':
+        if topic[0] == topic[1]:
+            print('topics must be .. {request topic} {reply topic}')
+            return
+        app = MqttServerApp(mqtt, debug=debug)
+
     if app is None:
         return
-    
+
     try:
         app.main()
     finally:

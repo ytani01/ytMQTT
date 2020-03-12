@@ -25,19 +25,18 @@ class Beebotte(Mqtt):
         super().__init__(topic, user, self.HOST, port=self.PORT,
                          debug=self._debug)
 
-    def publish(self, topic, data, qos=DEF_QOS, retain=False):
-        self._logger.debug('topic=%s, data=%s, qos=%d, retain=%s',
-                           topic, data, qos, retain)
-
+    def send_data(self, topic, data):
         payload = self.data2payload(data)
-        super().publish(topic, payload, qos=qos, retain=retain)
+        super().send_data(topic, payload)
 
-    def ts2datestr(self, ts_msec):
-        self._logger.debug('ts_msec=%d', ts_msec)
+    def recv_data(self, topic):
+        payload = super().recv_data(topic)
 
-        datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
-                                time.localtime(ts_msec / 1000))
-        return datestr
+        try:
+            return payload['data']
+        except Exception as e:
+            self._logger.info('payload=%s', payload)
+            return None
 
     def data2payload(self, data):
         self._logger.debug('data=%s', data)
@@ -46,6 +45,13 @@ class Beebotte(Mqtt):
         payload = {'data': data, 'ts': ts, 'ispublic': False}
         self._logger.debug('payload=%s', payload)
         return payload
+
+    def ts2datestr(self, ts_msec):
+        self._logger.debug('ts_msec=%d', ts_msec)
+
+        datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
+                                time.localtime(ts_msec / 1000))
+        return datestr
 
 
 import click
@@ -76,15 +82,19 @@ def main(user, topic1, topic2, mode, debug):
     if mode == '':
         app = MqttApp(bbt, debug=debug)
 
-    if mode in 'sc':
+    if mode != '':
         if len(topic) != 2:
-            print('topic mast be [{request topic}, {reply topic}]')
+            print('topics must be .. {request topic} {reply topic}')
             return
 
-    if mode == 's':
-        app = MqttServerApp(bbt, debug=debug)
     if mode == 'c':
         app = MqttClientApp(bbt, debug=debug)
+
+    if mode == 's':
+        if topic[0] == topic[1]:
+            print('topics must be .. {request topic} {reply topic}')
+            return
+        app = MqttServerApp(bbt, debug=debug)
 
     if app is None:
         return
