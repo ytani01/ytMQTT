@@ -5,7 +5,7 @@
 __author__ = 'Yoichi Tanibayashi'
 __date__   = '2019'
 
-from ytMqtt import Mqtt
+from ytMqtt import Mqtt, MqttApp, MqttServerApp, MqttClientApp
 import time
 
 from MyLogger import get_logger
@@ -17,12 +17,13 @@ class Beebotte(Mqtt):
 
     DEF_QOS = 0
 
-    def __init__(self, topic, user debug=False):
+    def __init__(self, topic, user, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
         self._logger.debug('topic=%s, user=%s', topic, user)
 
-        super().__init__(topic, user, self.HOST, port=self.PORT, debug=self._debug)
+        super().__init__(topic, user, self.HOST, port=self.PORT,
+                         debug=self._debug)
 
     def publish(self, topic, data, qos=DEF_QOS, retain=False):
         self._logger.debug('topic=%s, data=%s, qos=%d, retain=%s',
@@ -47,107 +48,6 @@ class Beebotte(Mqtt):
         return payload
 
 
-class App:
-    def __init__(self, topic, user, debug=False):
-        self._debug = debug
-        self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s, user=%s', topic, user)
-
-        self._topic = topic
-        self._user = user
-
-        self._bbt = Beebotte(self._topic, self.user, debug=self._debug)
-        self._bbt.start()
-
-    def main(self):
-        self._logger.debug('')
-
-        self._bbt.subscribe()
-        for t in self._topic:
-            self._bbt.publish(t, 'hello')
-
-        for i in range(10):
-            msg_type, msg_data = self._bbt.get_msg()
-            if msg_type == Beebotte.MSG_DATA:
-                topic = msg_data['topic']
-                payload = msg_data['payload']
-
-                data = payload['data']
-                datestr = self._bbt.ts2datestr(payload['ts'])
-
-                print('(%d) %s %s: %s' % (i, datestr, topic, data))
-            else:
-                print('(%d) %s' % (i, msg_data))
-            time.sleep(2)
-
-    def end(self):
-        self._logger.debug('')
-        self._bbt.end()
-
-
-class AppServer:
-    def __init__(self, topic, user, debug=False):
-        self._debug = debug
-        self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s, user=%s', topic, user)
-
-        self._topic = topic
-        self._user = user
-
-
-    def main(self):
-        self._logger.debug('')
-
-        while self._loop:
-            payload = self.recv_request()
-            self._logger.debug('payload=%s', payload)
-
-            data = payload['data']
-            print('data=%s' % data)
-
-            time.sleep(2)
-
-            self.send_reply(data)
-
-    def recv_request(self):
-        self._logger.debug('')
-
-        payload = super().recv_request()
-        return payload
-
-
-class AppClient:
-    def __init__(self, topic, debug=False):
-        self._debug = debug
-        self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s')
-
-        super().__init__(topic, Beebotte.HOST, Beebotte.PORT,
-                         debug=self._debug)
-
-    def main(self):
-        self._logger.debug('')
-
-        while self._loop:
-            data = input()
-            self._logger.debug('data=%s', data)
-
-            self.send_request(data)
-
-            payload = self.recv_reply()
-            self._logger.debug('payload=%s', payload)
-            print(payload['data'])
-
-    def end(self):
-        self._logger.debug('')
-
-        self._logger.debug('done')
-
-    def send_request(self, data):
-        self._logger.debug('data=%s', data)
-        self._bbt.publish(self._t_request, data)
-
-
 import click
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
@@ -156,24 +56,38 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
                help='''
 beebotte MQTT class
 ''')
+@click.argument('user')
 @click.argument('topic1')
 @click.argument('topic2', nargs=-1)
 @click.option('--mode', '-m', 'mode', type=str, default='',
               help='mode: \'\', \'s\', \'c\'')
 @click.option('--debug', '-d', 'debug', is_flag=True, default=False,
               help='debug flag')
-def main(topic1, topic2, mode, debug):
+def main(user, topic1, topic2, mode, debug):
     logger = get_logger(__name__, debug=debug)
-    logger.debug('topic1=%s, topic2=%s, mode=%s', topic1, topic2, mode)
+    logger.debug('user=%s, topic1=%s, topic2=%s, mode=%s',
+                 user, topic1, topic2, mode)
 
     topic = [topic1] + list(topic2)
 
+    bbt = Beebotte(topic, user, debug=debug)
+    app = None
+
     if mode == '':
-        app = App(topic, debug=debug)
+        app = MqttApp(bbt, debug=debug)
+
+    if mode in 'sc':
+        if len(topic) != 2:
+            print('topic mast be [{request topic}, {reply topic}]')
+            return
+
     if mode == 's':
-        app = AppServer(topic, debug=debug)
+        app = MqttServerApp(bbt, debug=debug)
     if mode == 'c':
-        app = AppClient(topic, debug=debug)
+        app = MqttClientApp(bbt, debug=debug)
+
+    if app is None:
+        return
 
     try:
         app.main()

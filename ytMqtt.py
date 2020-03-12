@@ -25,12 +25,12 @@ class Mqtt:
 
     DEF_QOS = 0
 
-    MSG_OK     = 'OK'      # {'type':MSG_OK,   'data':'message'}
-    MSG_CON    = 'CON'     # {'type':MSG_CON,  'data':rc}
+    MSG_OK     = 'OK'      # {'type':MSG_OK,     'data':'message'}
+    MSG_CON    = 'CON'     # {'type':MSG_CON,    'data':rc}
     MSG_DISCON = 'DISCON'  # {'type':MSG_DISCON, 'data':rc}
     MSG_DATA   = 'DATA'    # {'type':MSG_DATA, 'data':{'topic':t, 'payload':p}}
-    MSG_NONE   = 'NONE'    # {'type':MSG_NONE, 'data':None}
-    MSG_ERR    = 'ERR'     # {'type':MSG_ERR,  'data':'mesage'}
+    MSG_NONE   = 'NONE'    # {'type':MSG_NONE,   'data':None}
+    MSG_ERR    = 'ERR'     # {'type':MSG_ERR,    'data':'mesage'}
 
     def __init__(self, topic, user, host=DEF_HOST, port=DEF_PORT,
                  debug=False):
@@ -246,9 +246,11 @@ class Mqtt:
         topicが複数の場合は、先頭のトピックがマッチする
         """
         self._logger.debug('user=%s', user)
+        self._logger.debug('host=%s, port=%s, topic=%s',
+                           self._svr_host, self._svr_port, self._topic[0])
 
         for cf in self._conf:
-            # self._logger.debug('cf=%s', cf)
+            self._logger.debug('cf=%s', cf)
             if cf['host'] == self._svr_host and \
                cf['port'] == self._svr_port and \
                cf['topic'] == self._topic[0] and \
@@ -282,20 +284,12 @@ class Mqtt:
 
 
 class MqttApp:
-    def __init__(self, mqtt_cls, topic,
-                 user, mqtt_host, mqtt_port=Mqtt.DEF_PORT,
-                 debug=False):
+    def __init__(self, mqtt, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.info('mqtt_cls=%s', mqtt_cls)
-        self._logger.debug('topic=%s, user=%s, mqtt_host=%s, mqtt_port=%d',
-                           topic, user, mqtt_host, mqtt_port)
+        self._logger.info('mqtt=%s', type(mqtt))
 
-        self._topic = topic
-        self._user = user
-
-        self._mqtt = mqtt_cls(self._topic, self._user, mqtt_host, mqtt_port,
-                              debug=self._debug)
+        self._mqtt = mqtt
         self._mqtt.start()
 
     def main(self):
@@ -304,12 +298,12 @@ class MqttApp:
         self._mqtt.subscribe()
 
         for i in range(5):
-            for t in self._topic:
+            for t in self._mqtt._topic:
                 data = 'hello:' + str(i)
                 self._mqtt.publish(t, data)
                 print('publish(%d): %s: %s' % (i, t, data))
 
-            for t in self._topic:
+            for t in self._mqtt._topic:
                 msg_type, msg_data = self._mqtt.wait_msg(Mqtt.MSG_DATA)
                 if msg_type == Mqtt.MSG_DATA:
                     topic = msg_data['topic']
@@ -326,25 +320,19 @@ class MqttApp:
 
 
 class MqttServerApp:
-    def __init__(self, mqtt_cls, topic,
-                 user, mqtt_host=Mqtt.DEF_HOST, mqtt_port=Mqtt.DEF_PORT,
-                 debug=False):
+    def __init__(self, mqtt, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('mqtt_cls=%s', mqtt_cls)
-        self._logger.debug('topic=%s, user=%s, mqtt_host=%s, mqtt_port=%d',
-                           topic, user, mqtt_host, mqtt_port)
+        self._logger.debug('mqtt=%s', type(mqtt))
 
-        self._topic = topic
+        self._mqtt = mqtt
 
+        self._topic = self._mqtt._topic
         if len(self._topic) < 2:
             raise RuntimeError('len(_topic) < 2: %s' % self._topic)
 
-        self._t_request = topic[0]
-        self._t_reply = topic[1]
-
-        self._mqtt = Mqtt(self._topic, user, mqtt_host, mqtt_port,
-                          debug=self._debug)
+        self._t_request = self._topic[0]
+        self._t_reply = self._topic[1]
 
         self._active = True
 
@@ -392,25 +380,20 @@ class MqttServerApp:
 
 
 class MqttClientApp:
-    def __init__(self, mqtt_cls, topic,
-                 user, mqtt_host=Mqtt.DEF_HOST, mqtt_port=Mqtt.DEF_PORT,
-                 debug=False):
+    def __init__(self, mqtt, debug=False):
         self._debug = debug
         self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('mqtt_cls=%s', mqtt_cls)
-        self._logger.debug('topic=%s, user=%s, mqtt_host=%s, mqtt_port=%s',
-                           topic, user, mqtt_host, mqtt_port)
+        self._logger.debug('mqtt=%s', type(mqtt))
 
-        self._topic = topic
+        self._mqtt = mqtt
 
+        self._topic = self._mqtt._topic
         if len(self._topic) < 2:
             raise RuntimeError('len(_topic) <2: %s' % self._topic)
 
-        self._t_request = topic[0]
-        self._t_reply = topic[1]
+        self._t_request = self._topic[0]
+        self._t_reply = self._topic[1]
 
-        self._mqtt = Mqtt(self._topic, user, mqtt_host, mqtt_port,
-                          debug=self._debug)
         self._mqtt.start()
         self._mqtt.subscribe(self._t_reply)
 
@@ -491,14 +474,25 @@ def main(user, mqtt_host, mqtt_port, topic1, topic2, mode, debug):
 
     topic = [topic1] + list(topic2)
 
+    mqtt = Mqtt(topic, user, mqtt_host, mqtt_port, debug=debug)
+    app = None
+
     if mode == '':
-        app = MqttApp(Mqtt, topic, user, mqtt_host, mqtt_port, debug=debug)
+        app = MqttApp(mqtt, debug=debug)
+
+    if mode in 'sc':
+        if len(topic) != 2:
+            print('topic mast be [{request topic}, {reply topic}]')
+            return
+
     if mode == 's':
-        app = MqttServerApp(Mqtt, topic, user, mqtt_host, mqtt_port,
-                            debug=debug)
+        app = MqttServerApp(mqtt, debug=debug)
     if mode == 'c':
-        app = MqttClientApp(Mqtt, topic, user, mqtt_host, mqtt_port,
-                            debug=debug)
+        app = MqttClientApp(mqtt, debug=debug)
+
+    if app is None:
+        return
+    
     try:
         app.main()
     finally:
