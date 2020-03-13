@@ -19,8 +19,8 @@ class Beebotte(Mqtt):
 
     def __init__(self, topic, user, debug=False):
         self._debug = debug
-        self._logger = get_logger(__class__.__name__, self._debug)
-        self._logger.debug('topic=%s, user=%s', topic, user)
+        self._log = get_logger(__class__.__name__, self._debug)
+        self._log.debug('topic=%s, user=%s', topic, user)
 
         super().__init__(topic, user, self.HOST, port=self.PORT,
                          debug=self._debug)
@@ -34,20 +34,20 @@ class Beebotte(Mqtt):
 
         try:
             return payload['data']
-        except Exception as e:
-            self._logger.info('payload=%s', payload)
+        except Exception:
+            self._log.info('payload=%s', payload)
             return None
 
     def data2payload(self, data):
-        self._logger.debug('data=%s', data)
+        self._log.debug('data=%s', data)
 
         ts = int(time.time() * 1000)
         payload = {'data': data, 'ts': ts, 'ispublic': False}
-        self._logger.debug('payload=%s', payload)
+        self._log.debug('payload=%s', payload)
         return payload
 
     def ts2datestr(self, ts_msec):
-        self._logger.debug('ts_msec=%d', ts_msec)
+        self._log.debug('ts_msec=%d', ts_msec)
 
         datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
                                 time.localtime(ts_msec / 1000))
@@ -70,9 +70,9 @@ beebotte MQTT class
 @click.option('--debug', '-d', 'debug', is_flag=True, default=False,
               help='debug flag')
 def main(user, topic1, topic2, mode, debug):
-    logger = get_logger(__name__, debug=debug)
-    logger.debug('user=%s, topic1=%s, topic2=%s, mode=%s',
-                 user, topic1, topic2, mode)
+    log = get_logger(__name__, debug=debug)
+    log.debug('user=%s, topic1=%s, topic2=%s, mode=%s',
+              user, topic1, topic2, mode)
 
     topic = [topic1] + list(topic2)
 
@@ -102,8 +102,9 @@ def main(user, topic1, topic2, mode, debug):
     try:
         app.main()
     finally:
-        logger.info('finally')
+        log.info('finally')
         app.end()
+        log.info('done')
 
 
 if __name__ == '__main__':
