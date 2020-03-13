@@ -33,9 +33,10 @@ class Beebotte(Mqtt):
         payload = super().recv_data(topic)
 
         try:
+            self._log.debug('done: data=%s', payload['data'])
             return payload['data']
         except Exception:
-            self._log.info('payload=%s', payload)
+            self._log.info('done: payload=%s .. return None', payload)
             return None
 
     def data2payload(self, data):

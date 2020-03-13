@@ -119,15 +119,13 @@ class Mqtt:
         self._mqttc.connect(self._svr_host, self._svr_port,
                             keepalive=keepalive)
 
-        msg_type, msg_data = self.wait_msg(self.MSG_CON)
-        if msg_type == self.MSG_CON:
+        t, d = self.wait_msg(self.MSG_CON)
+        if t == self.MSG_CON:
             self._log.debug('rc=%d(%s), flag=%s',
-                            msg_data['rc'],
-                            self.CON_RC[msg_data['rc']],
-                            msg_data['flag'])
-            ret = msg_data['rc']
+                            d['rc'], self.CON_RC[d['rc']], d['flag'])
+            ret = d['rc']
         else:
-            self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
+            self._log.debug('t=%s, d=%s', t, d)
             ret = -1
 
         self._log.debug('done: ret=%s', ret)
@@ -137,36 +135,41 @@ class Mqtt:
         self._log.debug('')
         self._mqttc.disconnect()
 
-        msg_type, msg_data = self.wait_msg(self.MSG_DISCON)
-        if msg_data['rc'] != 0:
-            self._log.warning('rc=%s !?', msg_data['rc'])
-        self._log.debug('done: msg_type=%s, msg_data=%s', msg_type, msg_data)
+        t, d = self.wait_msg(self.MSG_DISCON)
+        if d['rc'] != 0:
+            self._log.warning('rc=%s !?', d['rc'])
+        self._log.debug('done: (%s, %s)', t, d)
+        return (t, d)
 
     def send_data(self, topic, data):
         self._log.debug('topic=%s, data=%a', topic, data)
 
-        self.publish(topic, data)
+        t, d = self.publish(topic, data)
+
+        self._log.debug('done: (%s, %s)', t, d)
+        return (t, d)
 
     def recv_data(self, topic):
         self._log.debug('topic=%s', topic)
 
         while self._loop_active:
             try:
-                msg_type, msg_data = self.wait_msg(self.MSG_DATA)
-                self._log.debug('msg_type=%s, msg_data=%s',
-                                msg_type, msg_data)
+                t, d = self.wait_msg(self.MSG_DATA)
+                self._log.debug('t=%s, d=%s', t, d)
 
-                if msg_data['topic'] == topic:
-                    return msg_data['payload']
+                if d['topic'] == topic:
+                    self._log.debug('done .. return %s', d['payload'])
+                    return d['payload']
 
             except Exception as e:
-                self._log.debug('%s:%s', type(e).__name__, e)
+                self._log.debug('%s:%s .. return None', type(e).__name__, e)
                 return None
 
-            self.put_msg(msg_type, msg_data)
+            self.put_msg(t, d)
             time.sleep(random.random())
 
-        self._log.info('done')
+        self._log.info('done: _loop_active=%s .. return None',
+                       self._loop_active)
         return None
 
     def publish(self, topic, payload, qos=DEF_QOS, retain=False):
@@ -186,8 +189,9 @@ class Mqtt:
 
         self._mqttc.publish(topic, msg_payload, qos=qos, retain=retain)
 
-        msg_type, msg_data = self.wait_msg(self.MSG_PUB)
-        self._log.debug('done:msg_type=%s, msg_data=%s', msg_type, msg_data)
+        t, d = self.wait_msg(self.MSG_PUB)
+        self._log.debug('done: (%s, %s)', t, d)
+        return (t, d)
 
     def subscribe(self, topics=None, qos=DEF_QOS):
         self._log.debug('topics=%s, qos=%d', topics, qos)
@@ -198,66 +202,68 @@ class Mqtt:
 
         if type(topics) != list:
             topics = [topics]
+            self._log.debug('topics=%s', topics)
 
-        for t in topics:
-            self._mqttc.subscribe(t, qos=qos)
-            t, d = self.wait_msg(self.MSG_SUB)
-            self._log.debug('t=%s, d=%s', t, d)
+        topics2 = [(t, qos) for t in topics]
+        self._log.debug('topics2=%s', topics2)
 
-    def unsubscribe(self, topic=None, ):
-        self._log.debug('topic=%s', topic)
+        self._mqttc.subscribe(topics2)
+        t, d = self.wait_msg(self.MSG_SUB)
+        self._log.debug('done: (%s,%s)', t, d)
 
-        if topic is None:
-            topic = self._topics
+    def unsubscribe(self, topics=None):
+        self._log.debug('topics=%s', topics)
 
-        if type(topic) != list:
-            topic = [topic]
+        if topics is None:
+            topics = self._topics
+            self._log.debug('topics=%s', topics)
 
-        for t in self._topics:
-            self._mqttc.unsubscribe(t)
+        if type(topics) != list:
+            topics = [topics]
+            self._log.debug('topics=%s', topics)
+
+        self._mqttc.unsubscribe(topics)
+        t, d = self.wait_msg(self.MSG_UNSUB)
+        self._log.debug('done: (%s, %s)', t, d)
 
     def wait_msg(self, wait_msg_type):
         self._log.debug('wait_msg_type=%s, _loop_active=%s',
                         wait_msg_type, self._loop_active)
 
-        (msg_type, msg_data) = (self.MSG_NONE, None)
+        (t, d) = (self.MSG_NONE, None)
 
         while self._loop_active:
-            msg_type, msg_data = self.get_msg(block=True, timeout=2)
-            '''
-            self._log.debug('wait_msgtype=%s, msg_type=%s, msg_data=%s',
-                               wait_msg_type, msg_type, msg_data)
-            '''
+            t, d = self.get_msg(timeout=2)
 
-            if msg_type == wait_msg_type:
-                self._log.debug('done:msg_type=%s, msg_data=%s',
-                                msg_type, msg_data)
-                return msg_type, msg_data
+            if t == wait_msg_type:
+                self._log.debug('done: (%s, %s)', t, d)
+                return t, d
 
-            if msg_type == self.MSG_ERR:
-                self._log.debug('done:msg_type=%s, msg_data=%s',
-                                msg_type, msg_data)
-                return msg_type, msg_data
+            if t == self.MSG_ERR:
+                self._log.debug('done: (%s, %s)', t, d)
+                return t, d
 
-            if msg_type == self.MSG_NONE:
+            if t == self.MSG_NONE:
                 continue
 
-            self.put_msg(msg_type, msg_data)
-            (msg_type, msg_data) = (self.MSG_NONE, None)
+            self.put_msg(t, d)
+            (t, d) = (self.MSG_NONE, None)
             time.sleep(random.random())
 
-        self._log.debug('done:msg_type=%s, msg_data=%s', msg_type, msg_data)
-        return msg_type, msg_data
+        self._log.debug('done: (%s, %s)', t, d)
+        return t, d
 
     def loop_start(self):
         self._log.debug('')
         self._mqttc.loop_start()
         self._loop_active = True
+        self._log.debug('done')
 
     def loop_stop(self):
         self._log.debug('')
         self._loop_active = False
         self._mqttc.loop_stop()
+        self._log.debug('done')
 
     def put_msg(self, msg_type, msg_data):
         self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
@@ -265,13 +271,14 @@ class Mqtt:
         msg = {'type': msg_type, 'data': msg_data}
         self._msgq.put(msg)
 
-    def get_msg(self, block=False, timeout=None):
+    def get_msg(self, block=True, timeout=None):
+        self._log.debug('block=%s, timeout=%s', block, timeout)
         try:
             msg = self._msgq.get(block=block, timeout=timeout)
         except queue.Empty:
             msg = {'type': self.MSG_NONE, 'data': None}
 
-        self._log.debug('block=%s, timeout=%s, msg=%s', block, timeout, msg)
+        self._log.debug('done: msg=%s', msg)
         return msg['type'], msg['data']
 
     def on_log(self, client, userdata, level, buf):
@@ -420,6 +427,8 @@ class MqttApp:
         self._log.info('')
         self._active = False
 
+        self._mqtt.unsubscribe()
+
         self._log.info('_mqtt.end() ..')
         self._mqtt.end()
 
@@ -483,7 +492,7 @@ class MqttServerApp:
         self._log.info('done')
 
     def handle(self, data):
-        time.sleep(1)
+        time.sleep(2)
 
         self._mqtt.send_data(self._topic_reply, data)
         self._log.info('send[%s]: data="%s"', self._topic_reply, data)
@@ -531,7 +540,7 @@ class MqttClientApp:
 
         while self._active:
             data = self._mqtt.recv_data(self._topic_reply)
-            print('"%s"' % (data))
+            print('> %a' % (data))
 
         self._log.debug('done')
 
