@@ -73,7 +73,8 @@ class Mqtt:
 
         self._pw = self.get_pw(self._user)
         if self._pw is None:
-            raise RuntimeError('get_pw(): failed (ret=%s)' % self._pw)
+            raise RuntimeError('get_pw(%s): failed (ret=%s)' % (
+                self._user, self._pw))
 
         self._log.debug('_user=\'%s\', _pw=\'%s\'', self._user, self._pw)
 
@@ -84,8 +85,8 @@ class Mqtt:
         self._mqttc.on_disconnect = self.on_disconnect
         self._mqttc.on_subscribe = self.on_subscribe
         self._mqttc.on_unsubscribe = self.on_unsubscribe
-        self._mqttc.on_message = self.on_message
         self._mqttc.on_publish = self.on_publish
+        self._mqttc.on_message = self.on_message
 
         self._mqttc.username_pw_set(self._user, self._pw)
 
@@ -410,7 +411,7 @@ class MqttApp:
 
         self._mqtt.start()
 
-        if not self._mqtt.subscribe():
+        if not self._mqtt.subscribe(self._topics):
             self._log.error('subscribe(): failed')
             return
 
