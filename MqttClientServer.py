@@ -35,19 +35,20 @@ class MqttClientServer:
         self._host = host
         self._port = port
 
-        
-        if self._topioc_request == '':
+        if self._topic_request == '':
             self._topic_request = None
         if self._topic_request is not None:
             if type(self._topic_request) != list:
                 self._topic_request = [self._topic_request]
-            
-        if self._topioc_reply == '':
+                self._log.debug('_topic_request=%s', self._topic_request)
+
+        if self._topic_reply == '':
             self._topic_reply = None
         if self._topic_reply is not None:
             if type(self._topic_reply) != list:
                 self._topic_reply = [self._topic_reply]
-            
+                self._log.debug('_topic_reply=%s', self._topic_reply)
+
         self._mqttc = mqtt.Client()
         self._mqttc.enable_logger()
         self._mqttc.username_pw_set(self._user, self._pw)
@@ -89,7 +90,7 @@ class MqttClientServer:
                             self._topic_reply)
             return
 
-        payload = json.dumps(data2payload(data)).encode('utf-8')
+        payload = json.dumps(self.data2payload(data)).encode('utf-8')
 
         for t in self._topic_reply:
             ret = self._mqttc.publish(t, payload,
@@ -104,12 +105,13 @@ class MqttClientServer:
 
     def get_ts(self, msg, payload):
         return msg.timestamp
-    
+
     def _on_connect(self, client, userdata, flag, rc):
         self._log.debug('userdata=%s, flag=%s, rc=%s', userdata, flag, rc)
 
+        self._log.debug('_topic_request=%s', self._topic_request)
         if self._topic_request is not None:
-            topecs = [(t, 0) for t in self._topic_reply]
+            topics = [(t, 0) for t in self._topic_request]
             ret = self._mqttc.subscribe(topics)
             self._log.debug('subscribe(%s) ==> ret=%s',
                             self._topic_request, ret)
@@ -135,7 +137,7 @@ class MqttClientServer:
 
         ts = self.get_ts(msg, payload)
         self._log.debug('ts=%s', ts)
-        
+
         if self._cb_func is not None:
             self._cb_func(data, ts)
 
