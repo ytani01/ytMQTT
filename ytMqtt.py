@@ -186,12 +186,8 @@ class Mqtt:
         self._log.debug('done: (%s, %s)', t, d)
         return t, d
 
-    def subscribe(self, topics=None, qos=DEF_QOS):
+    def subscribe(self, topics, qos=DEF_QOS):
         self._log.debug('topics=%s, qos=%d', topics, qos)
-
-        if topics is None:
-            topics = self._topics
-            self._log.debug('topics=%s', topics)
 
         if type(topics) != list:
             topics = [topics]
@@ -411,8 +407,8 @@ class MqttApp:
 
         self._mqtt.start()
 
-        if not self._mqtt.subscribe(self._topics):
-            self._log.error('subscribe(): failed')
+        if not self._mqtt.subscribe(self._topic):
+            self._log.error('subscribe(%s): failed', self._topic)
             return
 
         self._active = True
