@@ -45,40 +45,28 @@ class Mqtt:
         'Connection refused - not authorised',  # 5
     ]
 
-    def __init__(self, topic, user, host=DEF_HOST, port=DEF_PORT,
+    def __init__(self, user, pw, host=DEF_HOST, port=DEF_PORT,
                  debug=False):
         self._debug = debug
         self._log = get_logger(__class__.__name__, self._debug)
-        self._log.debug('topic=%s', topic)
-        self._log.debug('user=%s, host=%s, port=%d', user, host, port)
+        self._log.debug('user=%s, pw=%s, host=%s, port=%d',
+                        user, pw, host, port)
 
-        if type(topic) == str:
-            topic = [topic]
-
-        if len(topic) == 0:
-            return
-
-        self._topics = topic
         self._user = user
+        self._pw = pw
         self._svr_host = host
         self._svr_port = port
 
-        self._conf = []
-        self._pw   = ''
-
+        self._subsc_topics = []
         self._msgq = queue.Queue()
 
-        if self.load_conf() is None:
-            raise RuntimeError('load_conf(): failed')
-
-        self._pw = self.get_pw(self._user)
-        if self._pw is None:
-            raise RuntimeError('get_pw(%s): failed (ret=%s)' % (
-                self._user, self._pw))
-
-        self._log.debug('_user=\'%s\', _pw=\'%s\'', self._user, self._pw)
+        self._connecting = False
+        self._disconnecting = False
+        self._subscribing = False
 
         self._mqttc = mqtt.Client()
+        self._mqttc.username_pw_set(self._user, self._pw)
+
         # self._mqttc.enable_logger()
         # self._mqttc.on_log = self.on_log
         self._mqttc.on_connect = self.on_connect
@@ -88,14 +76,13 @@ class Mqtt:
         self._mqttc.on_publish = self.on_publish
         self._mqttc.on_message = self.on_message
 
-        self._mqttc.username_pw_set(self._user, self._pw)
-
         self._loop_active = False
 
     def start(self):
         self._log.debug('')
 
-        self.loop_start()  # start thread
+        self._loop_active = True
+        self._mqttc.loop_start()
         ret = self.connect()
 
         self._log.debug('done: ret=%s', ret)
@@ -104,8 +91,9 @@ class Mqtt:
     def end(self):
         self._log.debug('')
 
+        self._loop_active = False
         self.disconnect()
-        self.loop_stop()
+        self._mqttc.loop_stop()
 
         self._log.debug('done')
 
@@ -115,30 +103,54 @@ class Mqtt:
           0:   OK
           1-5: connect error
          -1:   unknown error
+         -2:   subscribe() error
         '''
         self._log.debug('keepalive=%s', keepalive)
+
+        self._connecting = True
         self._mqttc.connect(self._svr_host, self._svr_port,
                             keepalive=keepalive)
 
         t, d = self.wait_msg(self.MSG_CON)
+        self._log.debug('t=%s, d=%s', t, d)
         if t == self.MSG_CON:
-            self._log.debug('rc=%d(%s), flag=%s',
-                            d['rc'], self.CON_RC[d['rc']], d['flag'])
             ret = d['rc']
+            self._connecting = False
         else:
-            self._log.debug('t=%s, d=%s', t, d)
             ret = -1
 
+        if ret != 0:
+            return ret
+        
+        if len(self._subsc_topics) > 0:
+            self._subscribing = True
+            t, d = self.wait_msg(self.MSG_SUB)
+            self._log.debug('%s, %s', t, d)
+            if t == self.MSG_SUB:
+                self._subscribing = False
+                for q in d['qos']:
+                    if q > 2:
+                        self._log.error('subscribe(%s): failed, d[\'qos\']:%s',
+                                        self._subsc_topics, d['qos'])
+                        return -2
+            
         self._log.debug('done: ret=%s', ret)
         return ret
 
     def disconnect(self):
         self._log.debug('')
+
+        self._disconnecting = True
         self._mqttc.disconnect()
 
         t, d = self.wait_msg(self.MSG_DISCON)
-        if d['rc'] != 0:
-            self._log.warning('rc=%s !?', d['rc'])
+        if t == self.MSG_DISCON:
+            self._disconnecting = False
+            if d['rc'] != 0:
+                self._log.warning('rc=%s !?', d['rc'])
+
+        self._conn_active = 0
+
         self._log.debug('done: (%s, %s)', t, d)
         return t, d
 
@@ -180,39 +192,41 @@ class Mqtt:
         msg_payload = json.dumps(payload).encode('utf-8')
         self._log.debug('msg_payload=%s', msg_payload)
 
-        self._mqttc.publish(topic, msg_payload, qos=qos, retain=retain)
+        ret = self._mqttc.publish(topic, msg_payload, qos=qos, retain=retain)
+        if ret.rc != 0:
+            self._log.error('_mqttc.publish(%s): failed(%s)', topic, ret)
 
         t, d = self.wait_msg(self.MSG_PUB)
         self._log.debug('done: (%s, %s)', t, d)
         return t, d
 
-    def subscribe(self, topics, qos=DEF_QOS):
+    def set_subscribe(self, topics):
+        self._log.debug('topics=%s', topics)
+        self._subsc_topics = topics
+        
+    def do_subscribe(self, topics, qos=DEF_QOS):
         self._log.debug('topics=%s, qos=%d', topics, qos)
 
         if type(topics) != list:
             topics = [topics]
             self._log.debug('topics=%s', topics)
 
+        if len(topics) == 0:
+            self._log.warning('do nothing')
+            return
+
         topics2 = [(t, qos) for t in topics]
         self._log.debug('topics2=%s', topics2)
 
         self._mqttc.subscribe(topics2)
-        t, d = self.wait_msg(self.MSG_SUB)
-        self._log.debug('(%s,%s)', t, d)
-        for q in d['qos']:
-            if q != qos:
-                self._log.error('failed: %s ==> qos:%s', topics2, d['qos'])
-                return False
 
         self._log.debug('done')
-        return True
-            
 
     def unsubscribe(self, topics=None):
         self._log.debug('topics=%s', topics)
 
         if topics is None:
-            topics = self._topics
+            topics = self._subsc_topics
             self._log.debug('topics=%s', topics)
 
         if type(topics) != list:
@@ -238,9 +252,31 @@ class Mqtt:
 
             ### t != wait_msg_type
 
+            '''
             if wait_msg_type == self.MSG_DATA:
-                if t == self.MSG_DISCON or t == self.MSG_CON:
-                    self._log.warning('%s, %s !! .. ignored', t, d)
+                # if t == self.MSG_DISCON or t == self.MSG_CON
+                if t in  [self.MSG_DISCON, self.MSG_CON,
+                          self.MSG_SUB]:
+                    self._log.warning('Ignored: %s, %s', t, d)
+                    continue
+            '''
+
+            if t == self.MSG_CON:
+                if not self._connecting:
+                    self._log.warning('_connecting=%s .. Ignored: %s, %s',
+                                      self._connecting, t, d)
+                    continue
+
+            if t == self.MSG_DISCON:
+                if not self._disconnecting:
+                    self._log.warning('_disconnecting=%s .. Ignored: %s, %s',
+                                      self._disconnecting, t, d)
+                    continue
+
+            if t == self.MSG_SUB:
+                if not self._subscribing:
+                    self._log.warning('_subscribing=%s .. Ignored: %s, %s',
+                                      self._subscribing, t, d)
                     continue
 
             if t == self.MSG_ERR:
@@ -250,6 +286,9 @@ class Mqtt:
             if t == self.MSG_NONE:
                 continue
 
+            sleep_sec = random.random()
+            self._log.debug('waiting %s .. Skip: %s, %s .. sleep %.2f sec ..',
+                            wait_msg_type, t, d, sleep_sec)
             self.put_msg(t, d)
             (t, d) = (self.MSG_NONE, None)
             time.sleep(random.random())
@@ -257,32 +296,21 @@ class Mqtt:
         self._log.debug('done: (%s, %s)', t, d)
         return t, d
 
-    def loop_start(self):
-        self._log.debug('')
-        self._mqttc.loop_start()
-        self._loop_active = True
-        self._log.debug('done')
-
-    def loop_stop(self):
-        self._log.debug('')
-        self._loop_active = False
-        self._mqttc.loop_stop()
-        self._log.debug('done')
-
     def put_msg(self, msg_type, msg_data):
-        self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
+        # self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
 
         msg = {'type': msg_type, 'data': msg_data}
+        # self._log.debug('%s', msg)
         self._msgq.put(msg)
 
     def get_msg(self, block=True, timeout=None):
-        self._log.debug('block=%s, timeout=%s', block, timeout)
+        # self._log.debug('block=%s, timeout=%s', block, timeout)
         try:
             msg = self._msgq.get(block=block, timeout=timeout)
         except queue.Empty:
             msg = {'type': self.MSG_NONE, 'data': None}
 
-        self._log.debug('done: msg=%s', msg)
+        # self._log.debug('%s', msg)
         return msg['type'], msg['data']
 
     def on_log(self, client, userdata, level, buf):
@@ -291,6 +319,9 @@ class Mqtt:
 
     def on_connect(self, client, userdata, flag, rc):
         self._log.debug('userdata=%s, flag=%s, rc=%s', userdata, flag, rc)
+
+        ret = self.do_subscribe(self._subsc_topics)
+        self._log.debug('do_subscript(%s) ==> %s', self._subsc_topics, ret)
 
         self.put_msg(self.MSG_CON, {'rc': rc, 'flag': flag})
         self._log.debug('done')
@@ -369,53 +400,33 @@ class Mqtt:
                     return pathname
         return None
 
-    def get_pw(self, user):
-        """
-        topicが複数の場合は、先頭のトピックがマッチする
-        """
-        self._log.debug('user=%s', user)
-        self._log.debug('host=%s, port=%s, topic=%s',
-                        self._svr_host, self._svr_port, self._topics[0])
-
-        for cf in self._conf:
-            # self._log.debug('cf=%s', cf)
-            if cf['host'] == self._svr_host and \
-               cf['port'] == self._svr_port and \
-               cf['topic'] == self._topics[0] and \
-               cf['user'] == user:
-                pw = cf['pw']
-                self._log.debug('user=%s, pw=%s', user, pw)
-                return pw
-
-        return None
-
 
 class MqttApp:
-    def __init__(self, mqtt, debug=False):
+    def __init__(self, user, pw, host, port, topic, debug=False):
         self._debug = debug
         self._log = get_logger(__class__.__name__, self._debug)
-        self._log.debug('mqtt=%s', type(mqtt))
+        self._log.debug('user=%s, pw=%s, host=%s, port=%s, topic=%s',
+                        user, pw, host, port, topic)
 
-        self._mqtt = mqtt
-        self._topic = self._mqtt._topics[0]
+        self._mqtt = Mqtt(user, pw, host, port, debug=self._debug)
+        self._topic = topic
+        
         self._active = False
-
         self._th = threading.Thread(target=self.receiver)
 
     def main(self):
         self._log.debug('')
 
-        self._mqtt.start()
-
-        if not self._mqtt.subscribe(self._topic):
-            self._log.error('subscribe(%s): failed', self._topic)
+        self._mqtt.set_subscribe(self._topic)
+        if self._mqtt.start() != 0:
+            self._log.error('start(): failed')
             return
 
         self._active = True
         self._th.start()
 
         while self._active:
-            data = input('--==< OK >==--\n')
+            data = input('--==< Ready >==--\n')
 
             if data == '':
                 self._active = False
@@ -462,28 +473,27 @@ class MqttApp:
 
 
 class MqttServerApp:
-    def __init__(self, mqtt, debug=False):
+    def __init__(self, user, pw, host, port, topic_request, topic_reply,
+                 debug=False):
         self._debug = debug
         self._log = get_logger(__class__.__name__, self._debug)
-        self._log.debug('mqtt=%s', type(mqtt))
+        self._log.debug('user=%s, pw=%s, host=%s, port=%s,',
+                        user, pw, host, port)
+        self._log.debug('topic_request=%s, topic_reply=%s',
+                        topic_request, topic_reply)
 
-        self._mqtt = mqtt
-
-        self._topics = self._mqtt._topics
-        if len(self._topics) < 2:
-            raise RuntimeError('len(_topics) < 2: %s' % self._topics)
-
-        self._topic_request = self._topics[0]
-        self._topic_reply = self._topics[1]
+        self._mqtt = Mqtt(user, pw, host, port, debug=self._debug)
+        self._topic_request = topic_request
+        self._topic_reply = topic_reply
 
     def main(self):
         self._log.debug('')
 
+        self._mqtt.set_subscribe(self._topic_request)
         ret = self._mqtt.start()
         if ret != 0:
-            raise RuntimeError('start(): ret=%s' % (ret))
-
-        self._mqtt.subscribe(self._topic_request)
+            self._log.error('start(): failed')
+            return
 
         self._active = True
         self._log.info('Ready')
@@ -492,37 +502,52 @@ class MqttServerApp:
             data = self._mqtt.recv_data(self._topic_request)
             self._log.info('recv[%s]: data="%s"', self._topic_request, data)
 
+            #
+            # single thread version
+            #
+            self.handle(data)
+
+            '''
+
+            #
+            # multi thread version
+            #
             th = threading.Thread(target=self.handle, args=([data]))
             th.start()
+            '''
 
         self._log.debug('done')
 
     def end(self):
         self._log.info('')
         self._active = False
+
+        self._mqtt.unsubscribe(self._topic_request)
+
+        self._log.debug('_mqtt.end() ..')
+        self._mqtt.end()
+        
         self._log.info('done')
 
     def handle(self, data):
-        time.sleep(2)
+        time.sleep(2)  # dummy
 
-        self._mqtt.send_data(self._topic_reply, data)
         self._log.info('send[%s]: data="%s"', self._topic_reply, data)
+        self._mqtt.send_data(self._topic_reply, data)
 
 
 class MqttClientApp:
-    def __init__(self, mqtt, debug=False):
+    def __init__(self, user, pw, host, port, topic_request, topic_reply, debug=False):
         self._debug = debug
         self._log = get_logger(__class__.__name__, self._debug)
-        self._log.debug('mqtt=%s', type(mqtt))
+        self._log.debug('user=%s, pw=%s, host=%s, port=%s,',
+                        user, pw, host, port)
+        self._log.debug('topic_request=%s, topic_reply=%s',
+                        topic_request, topic_reply)
 
-        self._mqtt = mqtt
-
-        self._topics = self._mqtt._topics
-        if len(self._topics) < 2:
-            raise RuntimeError('len(_topics) <2: %s' % self._topics)
-
-        self._topic_request = self._topics[0]
-        self._topic_reply = self._topics[1]
+        self._mqtt = Mqtt(user, pw, host, port, debug=self._debug)
+        self._topic_request = topic_request
+        self._topic_reply = topic_reply
 
         self._th = threading.Thread(target=self.receiver)
 
@@ -531,9 +556,10 @@ class MqttClientApp:
     def main(self):
         self._log.debug('')
 
-        self._mqtt.start()
-        if not self._mqtt.subscribe(self._topic_reply):
-            self._log.error('subscribe(%s): failed', self._topic_reply)
+        self._mqtt.set_subscribe(self._topic_reply)
+        ret = self._mqtt.start()
+        if ret != 0:
+            selt._log.error('start(): faild')
             return
 
         self._th.start()
@@ -549,25 +575,29 @@ class MqttClientApp:
 
         self._log.debug('done')
 
-    def receiver(self):
-        self._log.debug('')
-
-        while self._active:
-            data = self._mqtt.recv_data(self._topic_reply)
-            print('> %a' % (data))
-
-        self._log.debug('done')
-
     def end(self):
         self._log.debug('')
         self._active = False
 
+        self._mqtt.unsubscribe(self._topic_reply)
+
+        self._log.debug('_mqtt.end() ..')
         self._mqtt.end()
 
         if self._th.is_alive():
             self._log.debug('join ..')
             self._th.join()
         
+        self._log.debug('done')
+
+    def receiver(self):
+        self._log.debug('')
+
+        while self._active:
+            data = self._mqtt.recv_data(self._topic_reply)
+            if data is not None:
+                print('> %a' % (data))
+
         self._log.debug('done')
 
 
@@ -595,11 +625,10 @@ def main(user, mqtt_host, mqtt_port, topic1, topic2, mode, debug):
 
     topic = [topic1] + list(topic2)
 
-    mqtt = Mqtt(topic, user, mqtt_host, mqtt_port, debug=debug)
     app = None
 
     if mode == '':
-        app = MqttApp(mqtt, debug=debug)
+        app = MqttApp(user, '', mqtt_host, mqtt_port, topic[0], debug=debug)
 
     if mode != '':
         if len(topic) != 2:
@@ -607,13 +636,15 @@ def main(user, mqtt_host, mqtt_port, topic1, topic2, mode, debug):
             return
 
     if mode == 'c':
-        app = MqttClientApp(mqtt, debug=debug)
+        app = MqttClientApp(user, '', mqtt_host, mqtt_port,
+                            topic[0], topic[1], debug=debug)
 
     if mode == 's':
         if topic[0] == topic[1]:
             print('topics must be .. {request topic} {reply topic}')
             return
-        app = MqttServerApp(mqtt, debug=debug)
+        app = MqttServerApp(user, '', mqtt_host, mqtt_port,
+                            topic[0], topic[1], debug=debug)
 
     if app is None:
         return
