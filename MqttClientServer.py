@@ -35,11 +35,19 @@ class MqttClientServer:
         self._host = host
         self._port = port
 
-        if self._topic_request == '':
+        
+        if self._topioc_request == '':
             self._topic_request = None
-        if self._topic_reply == '':
+        if self._topic_request is not None:
+            if type(self._topic_request) != list:
+                self._topic_request = [self._topic_request]
+            
+        if self._topioc_reply == '':
             self._topic_reply = None
-
+        if self._topic_reply is not None:
+            if type(self._topic_reply) != list:
+                self._topic_reply = [self._topic_reply]
+            
         self._mqttc = mqtt.Client()
         self._mqttc.enable_logger()
         self._mqttc.username_pw_set(self._user, self._pw)
@@ -83,9 +91,10 @@ class MqttClientServer:
 
         payload = json.dumps(data2payload(data)).encode('utf-8')
 
-        ret = self._mqttc.publish(self._topic_reply, payload,
-                                  qos=qos, retain=retain)
-        self._log.debug('publish() ==> ret=%s', ret)
+        for t in self._topic_reply:
+            ret = self._mqttc.publish(t, payload,
+                                      qos=qos, retain=retain)
+            self._log.debug('publish() ==> ret=%s', ret)
 
     def data2payload(self, data):
         return data
@@ -100,7 +109,8 @@ class MqttClientServer:
         self._log.debug('userdata=%s, flag=%s, rc=%s', userdata, flag, rc)
 
         if self._topic_request is not None:
-            ret = self._mqttc.subscribe((self._topic_request, 0))
+            topecs = [(t, 0) for t in self._topic_reply]
+            ret = self._mqttc.subscribe(topics)
             self._log.debug('subscribe(%s) ==> ret=%s',
                             self._topic_request, ret)
 
