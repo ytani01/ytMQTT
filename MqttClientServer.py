@@ -82,20 +82,27 @@ class MqttClientServer:
 
         self._log.debug('done')
 
-    def send_data(self, data, qos=0, retain=False):
-        self._log.debug('data=%a', data)
+    def send_data(self, data, topic=None, qos=0, retain=False):
+        self._log.debug('data=%a, topic=%s', data, topic)
 
-        if self._topic_reply is None:
-            self._log.debug('_topic_reply=%s .. do nothing',
-                            self._topic_reply)
+        if topic is None:
+            topic = self._topic_reply
+            self._log.debug('topic=%s', topic)
+
+        if topic is None:
+            self._log.debug('topic=%s .. do nothing', topic)
             return
+
+        if type(topic) != list:
+            topic = [topic]
+            self._log.debug('topic=%s', topic)
 
         payload = json.dumps(self.data2payload(data)).encode('utf-8')
 
-        for t in self._topic_reply:
+        for t in topic:
             ret = self._mqttc.publish(t, payload,
                                       qos=qos, retain=retain)
-            self._log.debug('publish() ==> ret=%s', ret)
+            self._log.debug('publish(%s) ==> ret=%s', t, ret)
 
     def data2payload(self, data):
         return data
