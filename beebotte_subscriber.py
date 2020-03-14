@@ -7,16 +7,15 @@
 #
 # argv: [topic, token]
 #
-from MqttClientServer import BeebotteSubscriber
+from Mqtt import BeebotteSubscriber
 import sys
 
 argv = sys.argv
 
-def cb_func(data, ts):
-    print(data, ts)
+def cb_func(data, topic, ts):
+    print(data, topic, ts)
 
-#s = BeebotteSubscriber(cb_func, argv[1], argv[2], debug=False)
-s = BeebotteSubscriber(cb_func, ['env1/temp', 'env1/humidity'], argv[2], debug=False)
+s = BeebotteSubscriber(cb_func, argv[1], argv[2], debug=True)
 s.start()
 
 while True:

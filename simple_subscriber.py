@@ -7,7 +7,7 @@
 #
 # argv: [topic, user, password, host]
 #
-from MqttClientServer import MqttSubscriber
+from Mqtt import MqttSubscriber
 import sys
 
 argv = sys.argv
