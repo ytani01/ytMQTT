@@ -13,8 +13,9 @@ import json
 import time
 import random
 import threading
-
 from MyLogger import get_logger
+import click
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 class Mqtt:
@@ -121,7 +122,7 @@ class Mqtt:
 
         if ret != 0:
             return ret
-        
+
         if len(self._subsc_topics) > 0:
             self._subscribing = True
             t, d = self.wait_msg(self.MSG_SUB)
@@ -133,7 +134,7 @@ class Mqtt:
                         self._log.error('subscribe(%s): failed, d[\'qos\']:%s',
                                         self._subsc_topics, d['qos'])
                         return -2
-            
+
         self._log.debug('done: ret=%s', ret)
         return ret
 
@@ -203,7 +204,7 @@ class Mqtt:
     def set_subscribe(self, topics):
         self._log.debug('topics=%s', topics)
         self._subsc_topics = topics
-        
+
     def do_subscribe(self, topics, qos=DEF_QOS):
         self._log.debug('topics=%s, qos=%d', topics, qos)
 
@@ -250,7 +251,7 @@ class Mqtt:
                 self._log.debug('done: (%s, %s)', t, d)
                 return t, d
 
-            ### t != wait_msg_type
+            # t != wait_msg_type
 
             '''
             if wait_msg_type == self.MSG_DATA:
@@ -297,10 +298,10 @@ class Mqtt:
         return t, d
 
     def put_msg(self, msg_type, msg_data):
-        # self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
-
+        self._log.debug('msg_type=%s, msg_data=%s', msg_type, msg_data)
+        
         msg = {'type': msg_type, 'data': msg_data}
-        # self._log.debug('%s', msg)
+        self._log.debug('%s', msg)
         self._msgq.put(msg)
 
     def get_msg(self, block=True, timeout=None):
@@ -350,11 +351,16 @@ class Mqtt:
         self._log.debug('done')
 
     def on_message(self, client, userdata, msg):
-        self._log.debug('userdata=%s, msg=%s', userdata, msg)
+        self._log.debug('userdata=%s, msg.payload=%s', userdata, msg.payload)
 
         topic = msg.topic
-        payload = json.loads(msg.payload.decode('utf-8'))
-        self._log.debug('topic=%s, payload=%s', topic, payload)
+        self._log.debug('topic=%s', topic)
+        try:
+            payload = json.loads(msg.payload.decode('utf-8'))
+        except Exception as e:
+            self._log.warning('%s:%s', type(e).__name__, e)
+            
+        self._log.debug('payload=%s', payload)
 
         msg_data = {'topic': topic, 'payload': payload}
         self.put_msg(self.MSG_DATA, msg_data)
@@ -410,7 +416,7 @@ class MqttApp:
 
         self._mqtt = Mqtt(user, pw, host, port, debug=self._debug)
         self._topic = topic
-        
+
         self._active = False
         self._th = threading.Thread(target=self.receiver)
 
@@ -526,7 +532,7 @@ class MqttServerApp:
 
         self._log.debug('_mqtt.end() ..')
         self._mqtt.end()
-        
+
         self._log.info('done')
 
     def handle(self, data):
@@ -537,7 +543,8 @@ class MqttServerApp:
 
 
 class MqttClientApp:
-    def __init__(self, user, pw, host, port, topic_request, topic_reply, debug=False):
+    def __init__(self, user, pw, host, port, topic_request, topic_reply,
+                 debug=False):
         self._debug = debug
         self._log = get_logger(__class__.__name__, self._debug)
         self._log.debug('user=%s, pw=%s, host=%s, port=%s,',
@@ -559,7 +566,7 @@ class MqttClientApp:
         self._mqtt.set_subscribe(self._topic_reply)
         ret = self._mqtt.start()
         if ret != 0:
-            selt._log.error('start(): faild')
+            self._log.error('start(): faild')
             return
 
         self._th.start()
@@ -587,7 +594,7 @@ class MqttClientApp:
         if self._th.is_alive():
             self._log.debug('join ..')
             self._th.join()
-        
+
         self._log.debug('done')
 
     def receiver(self):
@@ -599,10 +606,6 @@ class MqttClientApp:
                 print('> %a' % (data))
 
         self._log.debug('done')
-
-
-import click
-CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS,
