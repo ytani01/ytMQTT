@@ -308,9 +308,11 @@ class App:
         self._beebotte = beebotte
 
         if self._beebotte:
-            self._svr = Beebotte(self.cb, [topic_recv], user, debug=self._dbg)
+            self._svr = Beebotte(self.cb, [self._topic_recv, self._topic_send],
+                                 user, debug=self._dbg)
         else:
-            self._svr = Mqtt(self.cb, [topic_recv], user, password, svr_host,
+            self._svr = Mqtt(self.cb, [self._topic_recv, self._topic_send],
+                             user, password, svr_host,
                              debug=self._dbg)
 
     def cb(self, data, topic, ts):
