@@ -5,6 +5,12 @@
 
 ## Usage
 
+```bash
+$ pydoc3 Mqtt
+```
+
+## Sample
+
 Beebotte Publisher
 ```python3
 from Mqtt import BeebottePublisher as BBT

@@ -233,7 +233,7 @@ class Beebotte(Mqtt):
 
     _log = get_logger(__name__, False)
 
-    def __init__(self, cb_recv=None, topics_sub=[], token='', debug=False):
+    def __init__(self, cb_recv=None, topics_sub=None, token='', debug=False):
         self._dbg = debug
         __class__._log = get_logger(__class__.__name__, self._dbg)
         self._log.debug('topics_sub=%s, token=%s', topics_sub, token)
