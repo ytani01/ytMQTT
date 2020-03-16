@@ -28,11 +28,14 @@ class Mqtt:
     DEF_PORT = 1883
     CB_QPUT = '__Q_PUT__'
 
+    _log = get_logger(__name__, False)
+    # _log.info('%s', __name__)  # for debug
+    
     def __init__(self, cb_recv=None, topics_sub=[],
                  user='', pw='', host=DEF_HOST, port=DEF_PORT,
                  debug=False):
         self._dbg = debug
-        self._log = get_logger(__class__.__name__, self._dbg)
+        __class__._log = get_logger(__class__.__name__, self._dbg)
         self._log.debug('cb_recv=%s, topics_sub=%s', cb_recv, topics_sub)
         self._log.debug('user=%s, pw=%s, host=%s, port=%s',
                         user, pw, host, port)
@@ -226,8 +229,9 @@ class Beebotte(Mqtt):
         self._log.debug('ts=%s', ts)
         return ts
 
-    def ts2datestr(self, ts_msec):
-        self._log.debug('ts_msec=%d', ts_msec)
+    @classmethod
+    def ts2datestr(cls, ts_msec):
+        cls._log.debug('ts_msec=%d', ts_msec)
 
         datestr = time.strftime('%Y/%m/%d,%H:%M:%S',
                                 time.localtime(ts_msec / 1000))
