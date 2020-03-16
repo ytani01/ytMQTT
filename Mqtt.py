@@ -100,6 +100,10 @@ class Mqtt:
         self._log.debug('payload=%a', payload)
 
         for t in topics:
+            if t is None or t == '':
+                self._log.debug('t=\'%s\': ** do nothing **', t)
+                return
+
             ret = self._mqttc.publish(t, payload,
                                       qos=qos, retain=retain)
             self._log.debug('publish(%s) ==> ret=%s', t, ret)
@@ -181,11 +185,13 @@ class MqttSubscriber(Mqtt):
 
 
 class MqttPublisher(Mqtt):
+    _log = get_logger(__name__, False)
+
     def __init__(self, user='', pw='',
                  host=Mqtt.DEF_HOST, port=Mqtt.DEF_PORT,
                  debug=False):
         self._dbg = debug
-        self._log = get_logger(__class__.__name__, self._dbg)
+        __class__._log = get_logger(__class__.__name__, self._dbg)
         self._log.debug('user=%s, pw=%s, host=%s, port=%s',
                         user, pw, host, port)
 
@@ -203,9 +209,11 @@ class Beebotte(Mqtt):
     BEEBOTTE_HOST = 'mqtt.beebotte.com'
     BEEBOTTE_PORT = 1883
 
+    _log = get_logger(__name__, False)
+
     def __init__(self, cb_recv=None, topics_sub=[], token='', debug=False):
         self._dbg = debug
-        self._log = get_logger(__class__.__name__, self._dbg)
+        __class__._log = get_logger(__class__.__name__, self._dbg)
         self._log.debug('topics_sub=%s, token=%s', topics_sub, token)
 
         super().__init__(cb_recv, topics_sub, token, '',
@@ -246,38 +254,66 @@ class BeebotteSubscriber(Beebotte):
 
 
 class BeebottePublisher(Beebotte):
+    _log = get_logger(__name__, False)
+
     def __init__(self, token='', debug=False):
         self._dbg = debug
-        self._log = get_logger(__class__.__name__, self._dbg)
+        __class__._log = get_logger(__class__.__name__, self._dbg)
         self._log.debug('token=%s', token)
 
         super().__init__(None, [], token, debug=self._dbg)
 
 
 class App:
-    def __init__(self, topic_request, topic_reply, token, debug=False):
-        self._dbg = debug
-        self._log = get_logger(__class__.__name__, self._dbg)
-        self._log.debug('topic_request=%s, topic_reply=%s, token=%s',
-                        topic_request, topic_reply, token)
+    _log = get_logger(__name__, False)
 
-        self._topic_reply = topic_reply
-        self._svr = Beebotte(self.cb, [topic_request], token, debug=self._dbg)
+    STR_EXIT = ['exit', 'quit']
+
+    def __init__(self, topic_send, topic_recv, user, password, svr_host,
+                 beebotte, debug=False):
+        self._dbg = debug
+        __class__._log = get_logger(__class__.__name__, self._dbg)
+        self._log.debug('topic_send=%s, topic_recv=%s',
+                        topic_send, topic_recv)
+        self._log.debug('user=%s, password=%s', user, password)
+        self._log.debug('svr_host=%s, beebotte=%s', svr_host, beebotte)
+
+        self._topic_send = topic_send
+        self._topic_recv = topic_recv
+        self._user = user
+        self._password = password
+        self._svr_host = svr_host
+        self._beebotte = beebotte
+
+        if self._beebotte:
+            self._svr = Beebotte(self.cb, [topic_recv], user, debug=self._dbg)
+        else:
+            self._svr = Mqtt(self.cb, [topic_recv], user, password, svr_host,
+                             debug=self._dbg)
 
     def cb(self, data, topic, ts):
-        self._log.info('data=%a topic=%s, ts=%s', data, topic, ts)
+        if self._beebotte:
+            ts = self._svr.ts2datestr(ts)
+        print('%s [%s] %s' % (ts, topic, data))
 
-        if data == 'exit':
-            self.svr.active = False
-
-        self._svr.send_data('>>%s<<' % data, [self._topic_reply])
+        if data in self.STR_EXIT:
+            self._svr.active = False
 
     def main(self):
         self._svr.start()
 
         while self._svr.active:
-            print('Sleep ..')
-            time.sleep(5)
+            '''
+            if self._topic_send == '':
+                print('Sleep ..')
+                time.sleep(5)
+                continue
+            '''
+            
+            data = input('>> Ready <<\n')
+            self._svr.send_data(data, [self._topic_send])
+            if data in self.STR_EXIT:
+                break
 
     def end(self):
         self._svr.end()
@@ -286,15 +322,27 @@ class App:
 @click.command(context_settings=CONTEXT_SETTINGS, help='''
 MQTT Simple Server App
 ''')
-@click.argument('topic_request', type=str)
-@click.argument('topic_reply', type=str)
-@click.argument('token', type=str)
+@click.argument('topic_recv', type=str, default='')
+@click.argument('user', type=str, default='')
+@click.option('--topic_send', '-ts', '-t', 'topic_send', type=str, default='',
+              help='topic to send')
+@click.option('--password', '-p', 'password', type=str, default='',
+              help='password')
+@click.option('--svr_host', '-s', 'svr_host', type=str,
+              default='mqtt.beebotte.com',
+              help='server host name')
+@click.option('--beebotte', '-b', 'beebotte', is_flag=True, default=False,
+              help='Beebotte flag')
 @click.option('--debug', '-d', 'debug', is_flag=True, default=False,
               help='debug flag')
-def main(topic_request, topic_reply, token, debug):
+def main(topic_send, topic_recv, user, password, svr_host, beebotte, debug):
     log = get_logger(__name__, debug=debug)
+    log.debug('topic_send=%s, topic_recv=%s', topic_send, topic_recv)
+    log.debug('user=%s, password=%s', user, password)
+    log.debug('svr_host=%s, beebotte=%s', svr_host, beebotte)
 
-    app = App(topic_request, topic_reply, token, debug=debug)
+    app = App(topic_send, topic_recv, user, password, svr_host, beebotte,
+              debug=debug)
     try:
         app.main()
     finally:
