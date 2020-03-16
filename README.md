@@ -27,7 +27,7 @@ while True:
 bbt.end()
 ```
 
-Beebotte Subscriber (async)
+Beebotte Subscriber (callback)
 ```python3
 from Mqtt import BeebotteSubscriber as BBT
 
@@ -43,7 +43,7 @@ for i in range(10):
 bbt.end()
 ```
 
-Beebotte Subscriber (sync)
+Beebotte Subscriber (syncronous read)
 ```python3
 from Mqtt import BeebotteSubscriber as BBT
 
