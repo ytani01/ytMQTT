@@ -43,7 +43,7 @@ for i in range(10):
 bbt.end()
 ```
 
-Beebotte Subscriber (syncronous read)
+Beebotte Subscriber (blocking read)
 ```python3
 from Mqtt import BeebotteSubscriber as BBT
 

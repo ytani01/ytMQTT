@@ -325,15 +325,8 @@ class App:
         self._svr.start()
 
         while self._svr.active:
-            '''
-            if self._topic_send == '':
-                print('Sleep ..')
-                time.sleep(5)
-                continue
-            '''
-            
             data = input('>> Ready <<\n')
-            self._svr.send_data(data, [self._topic_send])
+            self._svr.send_data(data, self._topic_send)
             if data in self.STR_EXIT:
                 break
 
@@ -341,9 +334,7 @@ class App:
         self._svr.end()
 
 
-@click.command(context_settings=CONTEXT_SETTINGS, help='''
-MQTT Simple Server App
-''')
+@click.command(context_settings=CONTEXT_SETTINGS, help='MQTT Sample')
 @click.argument('topic_recv', type=str, default='')
 @click.argument('user', type=str, default='')
 @click.option('--topic_send', '-ts', '-t', 'topic_send', type=str, default='',
