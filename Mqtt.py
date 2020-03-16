@@ -31,7 +31,7 @@ class Mqtt:
     _log = get_logger(__name__, False)
     # _log.info('%s', __name__)  # for debug
     
-    def __init__(self, cb_recv=None, topics_sub=[],
+    def __init__(self, cb_recv=None, topics_sub=None,
                  user='', pw='', host=DEF_HOST, port=DEF_PORT,
                  debug=False):
         self._dbg = debug
@@ -40,10 +40,13 @@ class Mqtt:
         self._log.debug('user=%s, pw=%s, host=%s, port=%s',
                         user, pw, host, port)
 
-        self._cb_recv = cb_recv
-        if self._cb_recv == self.CB_QPUT:
-            self._cb_recv = self.cb_qput
+        if cb_recv == self.CB_QPUT:
+            cb_recv = self.cb_qput
             self._log.debug('cb_recv=%s', self._cb_recv)
+        self._cb_recv = cb_recv
+
+        if type(topics_sub) != list:
+            topics_sub = [topics_sub]
         self._topics_sub = topics_sub
         self._user = user
         self._pw = pw
@@ -89,20 +92,20 @@ class Mqtt:
 
         self._log.debug('done')
 
-    def send_data(self, data, topics=[], qos=0, retain=False):
+    def send_data(self, data, topics, qos=0, retain=False):
         self._log.debug('data=%a, topics=%s', data, topics)
 
         if type(topics) != list:
             topics = [ topics ]
-            self._log.warning('topics=%s', topics)
+            self._log.debug('topics=%s', topics)
 
         payload = json.dumps(self.data2payload(data)).encode('utf-8')
         self._log.debug('payload=%a', payload)
 
         for t in topics:
             if t is None or t == '':
-                self._log.debug('t=\'%s\': ** do nothing **', t)
-                return
+                self._log.debug('t=\'%s\': ** ignore **', t)
+                continue
 
             ret = self._mqttc.publish(t, payload,
                                       qos=qos, retain=retain)
@@ -157,18 +160,37 @@ class Mqtt:
     def _on_connect(self, client, userdata, flag, rc):
         self._log.debug('userdata=%s, flag=%s, rc=%s', userdata, flag, rc)
 
-        self._log.debug('_topics_sub=%s', self._topics_sub)
-        if self._topics_sub != []:
-            topics = [(t, 0) for t in self._topics_sub]
+        if rc != 0:
+            self._log.error('rc=%s (flag=%s)', rc, flag)
+            return
+
+        # subscribe
+        topics = []
+        for t in self._topics_sub:
+            if t is None or t == '':
+                self._log.debug('t=%a: ** ignore **', t)
+                continue
+            topics.append((t, 0))
+        if len(topics) >= 1:
             ret = self._mqttc.subscribe(topics)
             self._log.debug('subscribe(%s) ==> ret=%s', topics, ret)
 
     def _on_disconnect(self, client, userdata, rc):
         self._log.debug('userdata=%s, rc=%s', userdata, rc)
+        if rc != 0:
+            self._log.error('rc=%s', rc)
 
     def _on_subscribe(self, client, userdata, mid, granted_qos):
         self._log.debug('userdata=%s, mid=%s, granted_qos=%s',
                         userdata, mid, granted_qos)
+
+        err = False
+        for q in granted_qos:
+            if q > 3:
+                err=True
+
+        if err:
+            self._log.error('granted_qos=%s', granted_qos)
 
     def _on_unsubscribe(self, client, userdata, mid):
         self._log.debug('userdata=%s, mid', userdata, mid)
@@ -195,7 +217,7 @@ class MqttPublisher(Mqtt):
         self._log.debug('user=%s, pw=%s, host=%s, port=%s',
                         user, pw, host, port)
 
-        super().__init__(None, [], user, pw, host, port, self._dbg)
+        super().__init__(None, None, user, pw, host, port, self._dbg)
 
 
 class Beebotte(Mqtt):

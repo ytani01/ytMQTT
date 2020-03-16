@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 #
-# (c) 2020 Yoichi Tanibayashi
+# sample subscriber for Beebotte
 #
-# MqttSubscriber
-#  simple sample
-#
-# argv: [topic, token]
-#
-from Mqtt import BeebotteSubscriber
-import sys
+from Mqtt import BeebotteSubscriber as BBT
+import time
+import click
 
-argv = sys.argv
 
-def cb_func(data, topic, ts):
-    print(data, topic, ts)
+def cb(data, topic, ts):
+    print('%s[%s] %s' % (BBT.ts2datestr(ts), topic, data))
 
-s = BeebotteSubscriber(cb_func, argv[1], argv[2], debug=True)
-s.start()
 
-while True:
-    pass
+@click.command(help='Beebotte subscriber')
+@click.argument('token', type=str)
+@click.argument('topic1', type=str)
+@click.argument('topic2', type=str, nargs=-1)
+@click.option('--debug', '-d', 'debug', is_flag=True, default=False,
+              help='debug flag')
+def main(token, topic1, topic2, debug):
+    bbt = BBT(cb, [topic1] + list(topic2), token, debug=debug)
+    bbt.start()
+    while True:
+        time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()

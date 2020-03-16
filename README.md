@@ -26,7 +26,7 @@ Beebotte Subscriber (async)
 from Mqtt import BeebotteSubscriber
 
 def cb_recv_data(data, topic, ts):
-    print('%s [%s] %s' % (bbt.ts2datestr(ts), topic, data))
+    print('%s [%s] %s' % (BeebotteSubscriber.ts2datestr(ts), topic, data))
 
 bbt = BeebotteSubscriber(cb_recv_data, [ 'ch1/res1', 'ch2/res2' ], 'token_XX')
 bbt.start()

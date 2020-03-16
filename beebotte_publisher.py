@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 #
-# (c) 2020 Yoichi Tanibayashi
+# sample publisher for Beebotte
 #
-# MqttPublisher
-#  simple sample
-#
-# argv: [topic, token]
-#
-from Mqtt import BeebottePublisher
-import sys
+from Mqtt import BeebottePublisher as BBT
+import click
 
-argv = sys.argv
 
-m = BeebottePublisher(argv[2], debug=True)
-m.start()
+@click.command(help='Beebotte publisher')
+@click.argument('token', type=str)
+@click.argument('topic', type=str)
+@click.option('--debug', '-d', 'debug', is_flag=True, default=False,
+              help='debug flag')
+def main(token, topic, debug):
+    bbt = BBT(token, debug=debug)
+    bbt.start()
+    while True:
+        data = input('>> Ready <<\n')
+        bbt.send_data(data, topic)
 
-while True:
-    s = input('> ')
-    m.send_data(s, [argv[1]])
+
+if __name__ == '__main__':
+    main()
