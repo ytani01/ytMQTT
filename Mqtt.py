@@ -8,6 +8,7 @@ __date__   = '2020'
 import paho.mqtt.client as mqtt
 import time
 import json
+import queue
 from MyLogger import get_logger
 import click
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -15,22 +16,31 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 class Mqtt:
     '''
-    topics_sub = list of topics
-    cb_recv(data, topic, ts)
+    topics_sub = [ topic1, topic2 .. ]
+    _cb_recv(data, topic, ts)
+    
+    キューを介して同期的にデータ受信する場合は、
+    _cb_recvに``Mqtt.CB_QPUT``を指定して、
+    ``recv_data()`` で受信する。
+
     '''
     DEF_HOST = 'mqtt.beebotte.com'
     DEF_PORT = 1883
+    CB_QPUT = '__Q_PUT__'
 
     def __init__(self, cb_recv=None, topics_sub=[],
                  user='', pw='', host=DEF_HOST, port=DEF_PORT,
                  debug=False):
         self._dbg = debug
         self._log = get_logger(__class__.__name__, self._dbg)
-        self._log.debug('topics_sub=%s', topics_sub)
+        self._log.debug('cb_recv=%s, topics_sub=%s', cb_recv, topics_sub)
         self._log.debug('user=%s, pw=%s, host=%s, port=%s',
                         user, pw, host, port)
 
         self._cb_recv = cb_recv
+        if self._cb_recv == self.CB_QPUT:
+            self._cb_recv = self.cb_qput
+            self._log.debug('cb_recv=%s', self._cb_recv)
         self._topics_sub = topics_sub
         self._user = user
         self._pw = pw
@@ -40,6 +50,8 @@ class Mqtt:
         if type(self._topics_sub) != list:
             self._topics_sub = [ self._topics_sub ]
             self._log.warning('self._topics_sub=%s', self._topics_sub)
+
+        self._dataq = queue.Queue()
 
         self._mqttc = mqtt.Client()
         self._mqttc.enable_logger()
@@ -88,6 +100,27 @@ class Mqtt:
             ret = self._mqttc.publish(t, payload,
                                       qos=qos, retain=retain)
             self._log.debug('publish(%s) ==> ret=%s', t, ret)
+
+    def cb_qput(self, data, topic, ts):
+        self._log.debug('data=%s, topic=%s, ts=%s', data, topic, ts)
+        self._dataq.put((data, topic, ts))
+
+    def recv_data(self, timeout=2):
+        '''
+        retuen: (data, topic, ts)
+        '''
+        self._log.debug('timeout=%s', timeout)
+
+        while self.active:
+            try:
+                ret = self._dataq.get(timeout=timeout)
+                self._log.debug('ret=%s', ret)
+                return ret
+
+            except queue.Empty as e:
+                self._log.debug('%s:%s', type(e).__name__, e)
+
+        return None
 
     def data2payload(self, data):
         return data
@@ -157,6 +190,13 @@ class MqttPublisher(Mqtt):
 
 
 class Beebotte(Mqtt):
+    '''
+    Beebltteでは、
+    * topicsは、``channel/resource``の形式。
+    * ``token``は、``channel``毎
+
+    従って、``topics_sub``などは、全て同じ``channel``でなければならない。
+    '''
     BEEBOTTE_HOST = 'mqtt.beebotte.com'
     BEEBOTTE_PORT = 1883
 
