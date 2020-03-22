@@ -42,7 +42,7 @@ class Mqtt:
 
         if cb_recv == self.CB_QPUT:
             cb_recv = self.cb_qput
-            self._log.debug('cb_recv=%s', self._cb_recv)
+            self._log.debug('cb_recv=%s', cb_recv)
         self._cb_recv = cb_recv
 
         if type(topics_sub) != list:
